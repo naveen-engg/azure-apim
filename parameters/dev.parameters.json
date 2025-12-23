@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "projectName": {
+      "value": "myproject"
+    },
+    "environment": {
+      "value": "dev"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "vnetAddressPrefix": {
+      "value": "10.0.0.0/16"
+    },
+    "apimSubnetPrefix": {
+      "value": "10.0.1.0/24"
+    },
+    "appGatewaySubnetPrefix": {
+      "value": "10.0.2.0/24"
+    },
+    "privateEndpointSubnetPrefix": {
+      "value": "10.0.3.0/24"
+    },
+    "apimSku": {
+      "value": "Developer"
+    },
+    "apimCapacity": {
+      "value": 1
+    },
+    "appGatewayCapacity": {
+      "value": 2
+    },
+    "appGatewayMaxCapacity": {
+      "value": 5
+    },
+    "auth0Domain": {
+      "value": "contoso-dev.auth0.com"
+    },
+    "auth0Audience": {
+      "value": "https://api-dev.contoso.com"
+    },
+    "mulesoftBackendUrl": {
+      "value": "https://api-dev.mulesoft.contoso.com"
+    },
+    "privateDnsZoneName": {
+      "value": "privatelink.azurewebsites.net"
+    },
+    "adminObjectId": {
+      "value": "YOUR-AZURE-AD-OBJECT-ID"
+    },
+    "logRetentionDays": {
+      "value": 30
+    },
+    "enableWafPreventionMode": {
+      "value": false
+    }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region"
+      }
+    },
+    "privateEndpointName": {
+      "type": "string",
+      "metadata": {
+        "description": "Private Endpoint name"
+      }
+    },
+    "vnetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Virtual Network name"
+      }
+    },
+    "privateEndpointSubnetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Private Endpoint subnet name"
+      }
+    },
+    "appGatewayId": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Gateway resource ID"
+      }
+    },
+    "privateDnsZoneName": {
+      "type": "string",
+      "metadata": {
+        "description": "Private DNS Zone name"
+      }
+    }
+  },
+  "variables": {
+    "privateEndpointSubnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('privateEndpointSubnetName'))]",
+    "privateDnsZoneId": "[resourceId('Microsoft.Network/privateDnsZones', parameters('privateDnsZoneName'))]",
+    "privateEndpointDnsGroupName": "[concat(parameters('privateEndpointName'), '-dns-group')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/privateEndpoints",
+      "apiVersion": "2023-04-01",
+      "name": "[parameters('privateEndpointName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "subnet": {
+          "id": "[variables('privateEndpointSubnetId')]"
+        },
+        "privateLinkServiceConnections": [
+          {
+            "name": "[concat(parameters('privateEndpointName'), '-connection')]",
+            "properties": {
+              "privateLinkServiceId": "[parameters('appGatewayId')]",
+              "groupIds": [
+                "frontendIP"
+              ]
+            }
+          }
+        ],
+        "customNetworkInterfaceName": "[concat(parameters('privateEndpointName'), '-nic')]"
+      }
+    },
+    {
+      "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+      "apiVersion": "2023-04-01",
+      "name": "[concat(parameters('privateEndpointName'), '/', variables('privateEndpointDnsGroupName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateEndpoints', parameters('privateEndpointName'))]"
+      ],
+      "properties": {
+        "privateDnsZoneConfigs": [
+          {
+            "name": "config1",
+            "properties": {
+              "privateDnsZoneId": "[variables('privateDnsZoneId')]"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "privateEndpointId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/privateEndpoints', parameters('privateEndpointName'))]"
+    },
+    "privateEndpointName": {
+      "type": "string",
+      "value": "[parameters('privateEndpointName')]"
+    },
+    "privateEndpointIp": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/privateEndpoints', parameters('privateEndpointName'))).customDnsConfigs[0].ipAddresses[0]]"
+    }
+  }
+}

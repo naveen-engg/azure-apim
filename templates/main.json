@@ -1,0 +1,435 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "projectName": {
+      "type": "string",
+      "metadata": {
+        "description": "Project name prefix for all resources"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "allowedValues": ["dev", "staging", "prod"],
+      "metadata": {
+        "description": "Environment name"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for all resources"
+      }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/16",
+      "metadata": {
+        "description": "Virtual Network address space"
+      }
+    },
+    "apimSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.1.0/24",
+      "metadata": {
+        "description": "APIM subnet address range"
+      }
+    },
+    "appGatewaySubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.2.0/24",
+      "metadata": {
+        "description": "Application Gateway subnet address range"
+      }
+    },
+    "privateEndpointSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.3.0/24",
+      "metadata": {
+        "description": "Private Endpoint subnet address range"
+      }
+    },
+    "apimSku": {
+      "type": "string",
+      "allowedValues": ["Developer", "Premium"],
+      "defaultValue": "Developer",
+      "metadata": {
+        "description": "API Management SKU"
+      }
+    },
+    "apimCapacity": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 1,
+      "maxValue": 10,
+      "metadata": {
+        "description": "API Management capacity (units)"
+      }
+    },
+    "appGatewayCapacity": {
+      "type": "int",
+      "defaultValue": 2,
+      "minValue": 2,
+      "maxValue": 10,
+      "metadata": {
+        "description": "Application Gateway min instances"
+      }
+    },
+    "appGatewayMaxCapacity": {
+      "type": "int",
+      "defaultValue": 5,
+      "minValue": 2,
+      "maxValue": 125,
+      "metadata": {
+        "description": "Application Gateway max instances for autoscaling"
+      }
+    },
+    "auth0Domain": {
+      "type": "string",
+      "metadata": {
+        "description": "Auth0 tenant domain (e.g., contoso.auth0.com)"
+      }
+    },
+    "auth0Audience": {
+      "type": "string",
+      "metadata": {
+        "description": "Auth0 API audience identifier"
+      }
+    },
+    "mulesoftBackendUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "MuleSoft backend base URL (optional)"
+      }
+    },
+    "privateDnsZoneName": {
+      "type": "string",
+      "defaultValue": "privatelink.azurewebsites.net",
+      "metadata": {
+        "description": "Private DNS zone name for private endpoint"
+      }
+    },
+    "adminObjectId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure AD Object ID for Key Vault admin access"
+      }
+    },
+    "logRetentionDays": {
+      "type": "int",
+      "defaultValue": 30,
+      "minValue": 7,
+      "maxValue": 730,
+      "metadata": {
+        "description": "Log Analytics retention period in days"
+      }
+    },
+    "enableWafPreventionMode": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable WAF in Prevention mode (true) or Detection mode (false)"
+      }
+    }
+  },
+  "variables": {
+    "namingPrefix": "[concat(parameters('projectName'), '-', parameters('environment'))]",
+    "vnetName": "[concat(variables('namingPrefix'), '-vnet')]",
+    "apimName": "[concat(variables('namingPrefix'), '-apim')]",
+    "appGatewayName": "[concat(variables('namingPrefix'), '-appgw')]",
+    "keyVaultName": "[concat(replace(variables('namingPrefix'), '-', ''), 'kv')]",
+    "privateEndpointName": "[concat(variables('namingPrefix'), '-pe-appgw')]",
+    "privateDnsZoneName": "[parameters('privateDnsZoneName')]",
+    "logAnalyticsName": "[concat(variables('namingPrefix'), '-la')]",
+    "appInsightsName": "[concat(variables('namingPrefix'), '-ai')]",
+    "deploymentScriptIdentityName": "[concat(variables('namingPrefix'), '-ds-identity')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "monitoringDeployment",
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[uri(deployment().properties.templateLink.uri, 'monitoring.json')]"
+        },
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsName": {
+            "value": "[variables('logAnalyticsName')]"
+          },
+          "appInsightsName": {
+            "value": "[variables('appInsightsName')]"
+          },
+          "retentionDays": {
+            "value": "[parameters('logRetentionDays')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "networkDeployment",
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[uri(deployment().properties.templateLink.uri, 'network.json')]"
+        },
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vnetName": {
+            "value": "[variables('vnetName')]"
+          },
+          "vnetAddressPrefix": {
+            "value": "[parameters('vnetAddressPrefix')]"
+          },
+          "apimSubnetPrefix": {
+            "value": "[parameters('apimSubnetPrefix')]"
+          },
+          "appGatewaySubnetPrefix": {
+            "value": "[parameters('appGatewaySubnetPrefix')]"
+          },
+          "privateEndpointSubnetPrefix": {
+            "value": "[parameters('privateEndpointSubnetPrefix')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "keyVaultDeployment",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'networkDeployment')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[uri(deployment().properties.templateLink.uri, 'keyvault.json')]"
+        },
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "keyVaultName": {
+            "value": "[variables('keyVaultName')]"
+          },
+          "adminObjectId": {
+            "value": "[parameters('adminObjectId')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.logAnalyticsWorkspaceId.value]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "apimDeployment",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'networkDeployment')]",
+        "[resourceId('Microsoft.Resources/deployments', 'keyVaultDeployment')]",
+        "[resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[uri(deployment().properties.templateLink.uri, 'apim.json')]"
+        },
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "apimName": {
+            "value": "[variables('apimName')]"
+          },
+          "apimSku": {
+            "value": "[parameters('apimSku')]"
+          },
+          "apimCapacity": {
+            "value": "[parameters('apimCapacity')]"
+          },
+          "vnetName": {
+            "value": "[variables('vnetName')]"
+          },
+          "apimSubnetName": {
+            "value": "apim-subnet"
+          },
+          "keyVaultName": {
+            "value": "[variables('keyVaultName')]"
+          },
+          "auth0Domain": {
+            "value": "[parameters('auth0Domain')]"
+          },
+          "auth0Audience": {
+            "value": "[parameters('auth0Audience')]"
+          },
+          "mulesoftBackendUrl": {
+            "value": "[parameters('mulesoftBackendUrl')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "appInsightsInstrumentationKey": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.appInsightsInstrumentationKey.value]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "appGatewayDeployment",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'networkDeployment')]",
+        "[resourceId('Microsoft.Resources/deployments', 'apimDeployment')]",
+        "[resourceId('Microsoft.Resources/deployments', 'keyVaultDeployment')]",
+        "[resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[uri(deployment().properties.templateLink.uri, 'appgateway.json')]"
+        },
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "appGatewayName": {
+            "value": "[variables('appGatewayName')]"
+          },
+          "vnetName": {
+            "value": "[variables('vnetName')]"
+          },
+          "appGatewaySubnetName": {
+            "value": "appgateway-subnet"
+          },
+          "apimPrivateIp": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'apimDeployment')).outputs.apimPrivateIp.value]"
+          },
+          "minCapacity": {
+            "value": "[parameters('appGatewayCapacity')]"
+          },
+          "maxCapacity": {
+            "value": "[parameters('appGatewayMaxCapacity')]"
+          },
+          "enableWafPreventionMode": {
+            "value": "[parameters('enableWafPreventionMode')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.logAnalyticsWorkspaceId.value]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "privateDnsDeployment",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'networkDeployment')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[uri(deployment().properties.templateLink.uri, 'private-dns.json')]"
+        },
+        "parameters": {
+          "privateDnsZoneName": {
+            "value": "[variables('privateDnsZoneName')]"
+          },
+          "vnetName": {
+            "value": "[variables('vnetName')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "name": "privateEndpointDeployment",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'networkDeployment')]",
+        "[resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')]",
+        "[resourceId('Microsoft.Resources/deployments', 'privateDnsDeployment')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[uri(deployment().properties.templateLink.uri, 'private-endpoint.json')]"
+        },
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "privateEndpointName": {
+            "value": "[variables('privateEndpointName')]"
+          },
+          "vnetName": {
+            "value": "[variables('vnetName')]"
+          },
+          "privateEndpointSubnetName": {
+            "value": "privateendpoint-subnet"
+          },
+          "appGatewayId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.appGatewayId.value]"
+          },
+          "privateDnsZoneName": {
+            "value": "[variables('privateDnsZoneName')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "vnetId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networkDeployment')).outputs.vnetId.value]"
+    },
+    "apimName": {
+      "type": "string",
+      "value": "[variables('apimName')]"
+    },
+    "apimGatewayUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'apimDeployment')).outputs.apimGatewayUrl.value]"
+    },
+    "appGatewayFrontendIp": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.frontendPrivateIp.value]"
+    },
+    "privateEndpointIp": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'privateEndpointDeployment')).outputs.privateEndpointIp.value]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[variables('keyVaultName')]"
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.logAnalyticsWorkspaceId.value]"
+    },
+    "deploymentSummary": {
+      "type": "object",
+      "value": {
+        "projectName": "[parameters('projectName')]",
+        "environment": "[parameters('environment')]",
+        "location": "[parameters('location')]",
+        "vnetAddressSpace": "[parameters('vnetAddressPrefix')]",
+        "apimSku": "[parameters('apimSku')]",
+        "apimUrl": "[reference(resourceId('Microsoft.Resources/deployments', 'apimDeployment')).outputs.apimGatewayUrl.value]",
+        "privateEndpointIp": "[reference(resourceId('Microsoft.Resources/deployments', 'privateEndpointDeployment')).outputs.privateEndpointIp.value]"
+      }
+    }
+  }
+}

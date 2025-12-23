@@ -1,0 +1,298 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region"
+      }
+    },
+    "apimName": {
+      "type": "string",
+      "metadata": {
+        "description": "API Management service name"
+      }
+    },
+    "apimSku": {
+      "type": "string",
+      "allowedValues": ["Developer", "Premium"],
+      "metadata": {
+        "description": "API Management SKU"
+      }
+    },
+    "apimCapacity": {
+      "type": "int",
+      "metadata": {
+        "description": "API Management capacity"
+      }
+    },
+    "vnetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Virtual Network name"
+      }
+    },
+    "apimSubnetName": {
+      "type": "string",
+      "metadata": {
+        "description": "APIM subnet name"
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault name for certificates and secrets"
+      }
+    },
+    "auth0Domain": {
+      "type": "string",
+      "metadata": {
+        "description": "Auth0 tenant domain"
+      }
+    },
+    "auth0Audience": {
+      "type": "string",
+      "metadata": {
+        "description": "Auth0 API audience"
+      }
+    },
+    "mulesoftBackendUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "MuleSoft backend URL"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics Workspace resource ID"
+      }
+    },
+    "appInsightsInstrumentationKey": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights instrumentation key"
+      }
+    }
+  },
+  "variables": {
+    "apimSubnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('apimSubnetName'))]",
+    "publisherEmail": "admin@contoso.com",
+    "publisherName": "Contoso Organization"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ApiManagement/service",
+      "apiVersion": "2023-03-01-preview",
+      "name": "[parameters('apimName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('apimSku')]",
+        "capacity": "[parameters('apimCapacity')]"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "publisherEmail": "[variables('publisherEmail')]",
+        "publisherName": "[variables('publisherName')]",
+        "virtualNetworkType": "Internal",
+        "virtualNetworkConfiguration": {
+          "subnetResourceId": "[variables('apimSubnetId')]"
+        },
+        "customProperties": {
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls10": "False",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls11": "False",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Ssl30": "False",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls10": "False",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls11": "False",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Ssl30": "False",
+          "Microsoft.WindowsAzure.ApiManagement.Gateway.Protocols.Server.Http2": "True"
+        },
+        "apiVersionConstraint": {
+          "minApiVersion": "2019-12-01"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/namedValues",
+      "apiVersion": "2023-03-01-preview",
+      "name": "[concat(parameters('apimName'), '/auth0-domain')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ],
+      "properties": {
+        "displayName": "auth0-domain",
+        "value": "[parameters('auth0Domain')]",
+        "secret": false
+      }
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/namedValues",
+      "apiVersion": "2023-03-01-preview",
+      "name": "[concat(parameters('apimName'), '/auth0-audience')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ],
+      "properties": {
+        "displayName": "auth0-audience",
+        "value": "[parameters('auth0Audience')]",
+        "secret": false
+      }
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/namedValues",
+      "apiVersion": "2023-03-01-preview",
+      "name": "[concat(parameters('apimName'), '/mulesoft-backend-url')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ],
+      "properties": {
+        "displayName": "mulesoft-backend-url",
+        "value": "[if(empty(parameters('mulesoftBackendUrl')), 'https://api.mulesoft.example.com', parameters('mulesoftBackendUrl'))]",
+        "secret": false
+      }
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/loggers",
+      "apiVersion": "2023-03-01-preview",
+      "name": "[concat(parameters('apimName'), '/app-insights-logger')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ],
+      "properties": {
+        "loggerType": "applicationInsights",
+        "description": "Application Insights logger",
+        "credentials": {
+          "instrumentationKey": "[parameters('appInsightsInstrumentationKey')]"
+        },
+        "isBuffered": true,
+        "resourceId": "[substring(parameters('logAnalyticsWorkspaceId'), 0, lastIndexOf(parameters('logAnalyticsWorkspaceId'), '/'))]"
+      }
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/diagnostics",
+      "apiVersion": "2023-03-01-preview",
+      "name": "[concat(parameters('apimName'), '/applicationinsights')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/loggers', parameters('apimName'), 'app-insights-logger')]"
+      ],
+      "properties": {
+        "alwaysLog": "allErrors",
+        "loggerId": "[resourceId('Microsoft.ApiManagement/service/loggers', parameters('apimName'), 'app-insights-logger')]",
+        "sampling": {
+          "samplingType": "fixed",
+          "percentage": 100
+        },
+        "frontend": {
+          "request": {
+            "headers": ["Authorization", "Content-Type"],
+            "body": {
+              "bytes": 512
+            }
+          },
+          "response": {
+            "headers": ["Content-Type"],
+            "body": {
+              "bytes": 512
+            }
+          }
+        },
+        "backend": {
+          "request": {
+            "headers": ["Content-Type"],
+            "body": {
+              "bytes": 512
+            }
+          },
+          "response": {
+            "headers": ["Content-Type"],
+            "body": {
+              "bytes": 512
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products",
+      "apiVersion": "2023-03-01-preview",
+      "name": "[concat(parameters('apimName'), '/default-product')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ],
+      "properties": {
+        "displayName": "Default Product",
+        "description": "Default product for APIs",
+        "subscriptionRequired": true,
+        "approvalRequired": false,
+        "state": "published"
+      }
+    },
+    {
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "name": "apim-diagnostics",
+      "scope": "[concat('Microsoft.ApiManagement/service/', parameters('apimName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ],
+      "properties": {
+        "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+        "logs": [
+          {
+            "category": "GatewayLogs",
+            "enabled": true,
+            "retentionPolicy": {
+              "enabled": false,
+              "days": 0
+            }
+          },
+          {
+            "category": "WebSocketConnectionLogs",
+            "enabled": true,
+            "retentionPolicy": {
+              "enabled": false,
+              "days": 0
+            }
+          }
+        ],
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true,
+            "retentionPolicy": {
+              "enabled": false,
+              "days": 0
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "apimName": {
+      "type": "string",
+      "value": "[parameters('apimName')]"
+    },
+    "apimResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+    },
+    "apimGatewayUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ApiManagement/service', parameters('apimName'))).gatewayUrl]"
+    },
+    "apimPrivateIp": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ApiManagement/service', parameters('apimName'))).privateIPAddresses[0]]"
+    },
+    "apimPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ApiManagement/service', parameters('apimName')), '2023-03-01-preview', 'Full').identity.principalId]"
+    }
+  }
+}
