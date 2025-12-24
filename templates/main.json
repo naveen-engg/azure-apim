@@ -43,13 +43,6 @@
         "description": "Application Gateway subnet address range"
       }
     },
-    "privateEndpointSubnetPrefix": {
-      "type": "string",
-      "defaultValue": "10.0.3.0/24",
-      "metadata": {
-        "description": "Private Endpoint subnet address range"
-      }
-    },
     "apimSku": {
       "type": "string",
       "allowedValues": ["Developer", "Premium"],
@@ -104,13 +97,6 @@
         "description": "MuleSoft backend base URL (optional)"
       }
     },
-    "privateDnsZoneName": {
-      "type": "string",
-      "defaultValue": "privatelink.azurewebsites.net",
-      "metadata": {
-        "description": "Private DNS zone name for private endpoint"
-      }
-    },
     "adminObjectId": {
       "type": "string",
       "metadata": {
@@ -140,8 +126,6 @@
     "apimName": "[concat(variables('namingPrefix'), '-apim')]",
     "appGatewayName": "[concat(variables('namingPrefix'), '-appgw')]",
     "keyVaultName": "[concat(replace(variables('namingPrefix'), '-', ''), 'kv')]",
-    "privateEndpointName": "[concat(variables('namingPrefix'), '-pe-appgw')]",
-    "privateDnsZoneName": "[parameters('privateDnsZoneName')]",
     "logAnalyticsName": "[concat(variables('namingPrefix'), '-la')]",
     "appInsightsName": "[concat(variables('namingPrefix'), '-ai')]",
     "deploymentScriptIdentityName": "[concat(variables('namingPrefix'), '-ds-identity')]"
@@ -196,9 +180,6 @@
           },
           "appGatewaySubnetPrefix": {
             "value": "[parameters('appGatewaySubnetPrefix')]"
-          },
-          "privateEndpointSubnetPrefix": {
-            "value": "[parameters('privateEndpointSubnetPrefix')]"
           }
         }
       }
@@ -331,64 +312,7 @@
         }
       }
     },
-    {
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2021-04-01",
-      "name": "privateDnsDeployment",
-      "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'networkDeployment')]"
-      ],
-      "properties": {
-        "mode": "Incremental",
-        "templateLink": {
-          "uri": "[uri(deployment().properties.templateLink.uri, 'private-dns.json')]"
-        },
-        "parameters": {
-          "privateDnsZoneName": {
-            "value": "[variables('privateDnsZoneName')]"
-          },
-          "vnetName": {
-            "value": "[variables('vnetName')]"
-          }
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2021-04-01",
-      "name": "privateEndpointDeployment",
-      "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'networkDeployment')]",
-        "[resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')]",
-        "[resourceId('Microsoft.Resources/deployments', 'privateDnsDeployment')]"
-      ],
-      "properties": {
-        "mode": "Incremental",
-        "templateLink": {
-          "uri": "[uri(deployment().properties.templateLink.uri, 'private-endpoint.json')]"
-        },
-        "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "privateEndpointName": {
-            "value": "[variables('privateEndpointName')]"
-          },
-          "vnetName": {
-            "value": "[variables('vnetName')]"
-          },
-          "privateEndpointSubnetName": {
-            "value": "privateendpoint-subnet"
-          },
-          "appGatewayId": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.appGatewayId.value]"
-          },
-          "privateDnsZoneName": {
-            "value": "[variables('privateDnsZoneName')]"
-          }
-        }
-      }
-    }
+
   ],
   "outputs": {
     "vnetId": {
@@ -403,13 +327,13 @@
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'apimDeployment')).outputs.apimGatewayUrl.value]"
     },
-    "appGatewayFrontendIp": {
+    "appGatewayPublicIp": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.frontendPrivateIp.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpAddress.value]"
     },
-    "privateEndpointIp": {
+    "appGatewayFqdn": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'privateEndpointDeployment')).outputs.privateEndpointIp.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpFqdn.value]"
     },
     "keyVaultName": {
       "type": "string",
@@ -428,7 +352,8 @@
         "vnetAddressSpace": "[parameters('vnetAddressPrefix')]",
         "apimSku": "[parameters('apimSku')]",
         "apimUrl": "[reference(resourceId('Microsoft.Resources/deployments', 'apimDeployment')).outputs.apimGatewayUrl.value]",
-        "privateEndpointIp": "[reference(resourceId('Microsoft.Resources/deployments', 'privateEndpointDeployment')).outputs.privateEndpointIp.value]"
+        "appGatewayPublicIp": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpAddress.value]",
+        "appGatewayFqdn": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpFqdn.value]"
       }
     }
   }

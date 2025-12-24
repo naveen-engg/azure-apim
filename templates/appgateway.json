@@ -202,15 +202,6 @@
         ],
         "frontendIPConfigurations": [
           {
-            "name": "[variables('frontendPrivateIpConfigName')]",
-            "properties": {
-              "privateIPAllocationMethod": "Dynamic",
-              "subnet": {
-                "id": "[variables('appGatewaySubnetId')]"
-              }
-            }
-          },
-          {
             "name": "[variables('frontendPublicIpConfigName')]",
             "properties": {
               "publicIPAddress": {
@@ -266,7 +257,7 @@
             "name": "[variables('httpListenerName')]",
             "properties": {
               "frontendIPConfiguration": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', parameters('appGatewayName'), variables('frontendPrivateIpConfigName'))]"
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', parameters('appGatewayName'), variables('frontendPublicIpConfigName'))]"
               },
               "frontendPort": {
                 "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts', parameters('appGatewayName'), variables('frontendPortName'))]"
@@ -280,7 +271,7 @@
             "name": "[variables('httpListenerRedirectName')]",
             "properties": {
               "frontendIPConfiguration": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', parameters('appGatewayName'), variables('frontendPrivateIpConfigName'))]"
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', parameters('appGatewayName'), variables('frontendPublicIpConfigName'))]"
               },
               "frontendPort": {
                 "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts', parameters('appGatewayName'), variables('frontendPortHttpName'))]"
@@ -412,13 +403,13 @@
       "type": "string",
       "value": "[parameters('appGatewayName')]"
     },
-    "frontendPrivateIp": {
-      "type": "string",
-      "value": "[reference(resourceId('Microsoft.Network/applicationGateways', parameters('appGatewayName'))).frontendIPConfigurations[0].properties.privateIPAddress]"
-    },
     "publicIpAddress": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))).ipAddress]"
+    },
+    "publicIpFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))).dnsSettings.fqdn]"
     }
   }
 }

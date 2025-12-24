@@ -20,9 +20,6 @@
     "appGatewaySubnetPrefix": {
       "value": "10.10.2.0/24"
     },
-    "privateEndpointSubnetPrefix": {
-      "value": "10.10.3.0/24"
-    },
     "apimSku": {
       "value": "Premium"
     },
@@ -43,9 +40,6 @@
     },
     "mulesoftBackendUrl": {
       "value": "https://api.mulesoft.contoso.com"
-    },
-    "privateDnsZoneName": {
-      "value": "privatelink.azurewebsites.net"
     },
     "adminObjectId": {
       "value": "YOUR-AZURE-AD-OBJECT-ID"

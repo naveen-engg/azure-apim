@@ -252,16 +252,17 @@ function Show-DeploymentOutputs {
     
     Write-Success "API Management Service: $($outputs.apimName.Value)"
     Write-Success "API Gateway URL: $($outputs.apimGatewayUrl.Value)"
-    Write-Success "Private Endpoint IP: $($outputs.privateEndpointIp.Value)"
-    Write-Success "App Gateway Private IP: $($outputs.appGatewayFrontendIp.Value)"
+    Write-Success "App Gateway Public IP: $($outputs.appGatewayPublicIp.Value)"
+    Write-Success "App Gateway FQDN: $($outputs.appGatewayFqdn.Value)"
     Write-Success "Key Vault Name: $($outputs.keyVaultName.Value)"
     
     Write-Info "`nNext Steps:"
-    Write-Host "1. Configure DNS to point to Private Endpoint IP: $($outputs.privateEndpointIp.Value)"
-    Write-Host "2. Upload SSL certificates to Key Vault: $($outputs.keyVaultName.Value)"
-    Write-Host "3. Import APIs into APIM: $($outputs.apimName.Value)"
-    Write-Host "4. Apply APIM policies from .\policies\ directory"
-    Write-Host "5. Configure Auth0 application and update named values"
+    Write-Host "1. Configure DNS to point to Application Gateway: $($outputs.appGatewayPublicIp.Value)"
+    Write-Host "2. Or use the auto-generated FQDN: $($outputs.appGatewayFqdn.Value)"
+    Write-Host "3. Upload SSL certificates to Key Vault: $($outputs.keyVaultName.Value)"
+    Write-Host "4. Import APIs into APIM: $($outputs.apimName.Value)"
+    Write-Host "5. Apply APIM policies from .\policies\ directory"
+    Write-Host "6. Configure Auth0 application and update named values"
     Write-Host ""
     
     # Save outputs to file

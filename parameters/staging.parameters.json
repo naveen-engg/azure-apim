@@ -6,19 +6,19 @@
       "value": "myproject"
     },
     "environment": {
-      "value": "dev"
+      "value": "staging"
     },
     "location": {
       "value": "eastus"
     },
     "vnetAddressPrefix": {
-      "value": "10.0.0.0/16"
+      "value": "10.5.0.0/16"
     },
     "apimSubnetPrefix": {
-      "value": "10.0.1.0/24"
+      "value": "10.5.1.0/24"
     },
     "appGatewaySubnetPrefix": {
-      "value": "10.0.2.0/24"
+      "value": "10.5.2.0/24"
     },
     "apimSku": {
       "value": "Developer"
@@ -30,25 +30,25 @@
       "value": 2
     },
     "appGatewayMaxCapacity": {
-      "value": 5
+      "value": 7
     },
     "auth0Domain": {
-      "value": "contoso-dev.auth0.com"
+      "value": "contoso-staging.auth0.com"
     },
     "auth0Audience": {
-      "value": "https://api-dev.contoso.com"
+      "value": "https://api-staging.contoso.com"
     },
     "mulesoftBackendUrl": {
-      "value": "https://api-dev.mulesoft.contoso.com"
+      "value": "https://api-staging.mulesoft.contoso.com"
     },
     "adminObjectId": {
       "value": "YOUR-AZURE-AD-OBJECT-ID"
     },
     "logRetentionDays": {
-      "value": 30
+      "value": 60
     },
     "enableWafPreventionMode": {
-      "value": false
+      "value": true
     }
   }
 }

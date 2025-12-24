@@ -1,359 +1,295 @@
-# Azure APIM Private Endpoint Deployment Guide
+# Environment Comparison Guide
 
-## 📋 Overview
+## 🌍 Quick Environment Reference
 
-This deployment package provides production-ready ARM templates for Azure API Management with Private Endpoint architecture, featuring comprehensive security, Auth0 integration, and MuleSoft connectivity.
+### Development Environment
+**Purpose:** Local development, feature testing, debugging  
+**Network:** 10.0.0.0/16  
 
-**Estimated Deployment Time:** 45-60 minutes
-
-## 📁 Package Contents
-
-### Templates (templates/)
-- `main.json` - Main orchestration template
-- `network.json` - VNet, Subnets, NSGs  
-- `apim.json` - API Management (Internal VNet mode)
-- `appgateway.json` - Application Gateway + WAF v2 (Private Frontend)
-- `private-endpoint.json` - Private Endpoint configuration
-- `private-dns.json` - Private DNS Zone
-- `keyvault.json` - Azure Key Vault with Managed Identity
-- `monitoring.json` - Log Analytics + Application Insights
-
-### Parameters (parameters/)
-- `dev.parameters.json` - Development environment settings
-- `prod.parameters.json` - Production environment settings
-
-### Policies (policies/)
-- `api-auth0-policy.xml` - Auth0 JWT validation policy
-- `mulesoft-integration-policy.xml` - MuleSoft integration policy
-
-### Scripts (scripts/)
-- `deploy.sh` - Bash deployment script
-- `deploy.ps1` - PowerShell deployment script
-
-## 🔧 Prerequisites
-
-### Required Tools
-
-**Option 1: Azure CLI**
-```bash
-# Install Azure CLI
-curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-az --version
+```mermaid
+graph LR
+    Dev[Development] --> Features[Feature Testing<br/>Local Development<br/>Debug Mode]
+    
+    style Dev fill:#E3F2FD,stroke:#1976D2,stroke-width:2px,color:#000
+    style Features fill:#FFF3E0,stroke:#F57C00,stroke-width:2px,color:#000
 ```
 
-**Option 2: Azure PowerShell**
-```powershell
-Install-Module -Name Az -AllowClobber -Scope CurrentUser
-Get-InstalledModule -Name Az
-```
-
-### Azure Permissions
-- Owner or Contributor role on subscription
-- Ability to create resources
-- Ability to assign roles (for Managed Identity)
-
-### Get Azure AD Object ID
-```bash
-# Azure CLI
-az ad signed-in-user show --query id -o tsv
-
-# PowerShell
-(Get-AzADUser -UserPrincipalName (Get-AzContext).Account).Id
-```
-
-## 🚀 Quick Start
-
-### 1. Update Parameters
-
-Edit `parameters/dev.parameters.json`:
-```json
-{
-  "adminObjectId": { "value": "YOUR-AZURE-AD-OBJECT-ID" },
-  "auth0Domain": { "value": "YOUR-TENANT.auth0.com" },
-  "auth0Audience": { "value": "https://api.YOUR-DOMAIN.com" }
-}
-```
-
-### 2. Deploy
-
-**Using Bash:**
-```bash
-chmod +x scripts/deploy.sh
-./scripts/deploy.sh dev
-```
-
-**Using PowerShell:**
-```powershell
-.\scripts\deploy.ps1 -Environment dev
-```
-
-## 📊 Architecture Components
-
-The deployment creates:
-- Virtual Network (10.0.0.0/16 for dev, 10.10.0.0/16 for prod)
-- 3 Subnets (APIM, App Gateway, Private Endpoint)
-- Network Security Groups with production-ready rules
-- API Management in Internal VNet mode
-- Application Gateway with WAF v2 (OWASP 3.2)
-- Private Endpoint for secure App Gateway access
-- Private DNS Zone for name resolution
-- Key Vault with soft delete and purge protection
-- Managed Identity for APIM
-- Log Analytics Workspace (30 days dev, 90 days prod)
-- Application Insights for APM
-
-## ⚙️ Configuration
-
-### Key Parameters
-
-| Parameter | Dev | Prod | Description |
-|-----------|-----|------|-------------|
-| apimSku | Developer | Premium | APIM pricing tier |
-| apimCapacity | 1 | 2 | APIM instance count |
-| appGatewayCapacity | 2 | 3-10 | App Gateway instances |
-| enableWafPreventionMode | false | true | WAF mode |
-| logRetentionDays | 30 | 90 | Log retention |
-
-### Network Layout
-
-**Development (10.0.0.0/16):**
-- APIM Subnet: 10.0.1.0/24
-- App Gateway Subnet: 10.0.2.0/24
-- Private Endpoint Subnet: 10.0.3.0/24
-
-**Production (10.10.0.0/16):**
-- APIM Subnet: 10.10.1.0/24
-- App Gateway Subnet: 10.10.2.0/24
-- Private Endpoint Subnet: 10.10.3.0/24
-
-## 📝 Post-Deployment Tasks
-
-### 1. Configure DNS
-
-Get Private Endpoint IP:
-```bash
-az network private-endpoint show \
-  --resource-group rg-apim-private-dev \
-  --name myproject-dev-pe-appgw \
-  --query customDnsConfigs[0].ipAddresses[0] -o tsv
-```
-
-Create A record pointing `api.yourdomain.com` to the Private Endpoint IP.
-
-### 2. Upload SSL Certificates
-
-```bash
-az keyvault certificate import \
-  --vault-name myprojectdevkv \
-  --name api-ssl-cert \
-  --file certificate.pfx \
-  --password "cert-password"
-```
-
-### 3. Grant APIM Key Vault Access
-
-```bash
-APIM_PRINCIPAL_ID=$(az apim show \
-  --resource-group rg-apim-private-dev \
-  --name myproject-dev-apim \
-  --query identity.principalId -o tsv)
-
-az keyvault set-policy \
-  --name myprojectdevkv \
-  --object-id $APIM_PRINCIPAL_ID \
-  --secret-permissions get list
-```
-
-### 4. Import APIs
-
-```bash
-az apim api import \
-  --resource-group rg-apim-private-dev \
-  --service-name myproject-dev-apim \
-  --path /api/v1 \
-  --specification-path openapi.json \
-  --specification-format OpenApiJson \
-  --api-id my-api
-```
-
-### 5. Apply APIM Policies
-
-```bash
-# Apply Auth0 JWT validation
-az apim api policy create \
-  --resource-group rg-apim-private-dev \
-  --service-name myproject-dev-apim \
-  --api-id my-api \
-  --xml-content @policies/api-auth0-policy.xml
-
-# Apply MuleSoft integration policy
-az apim api operation policy create \
-  --resource-group rg-apim-private-dev \
-  --service-name myproject-dev-apim \
-  --api-id my-api \
-  --operation-id mulesoft-op \
-  --xml-content @policies/mulesoft-integration-policy.xml
-```
-
-### 6. Configure Auth0
-
-1. Create Auth0 Application (Machine-to-Machine or Web App)
-2. Create Auth0 API with audience matching your parameter
-3. Update APIM named values if needed
-
-### 7. Test Deployment
-
-```bash
-# Get Auth0 token
-TOKEN=$(curl --request POST \
-  --url https://your-tenant.auth0.com/oauth/token \
-  --header 'content-type: application/json' \
-  --data '{
-    "client_id":"YOUR_CLIENT_ID",
-    "client_secret":"YOUR_CLIENT_SECRET",
-    "audience":"https://api.yourdomain.com",
-    "grant_type":"client_credentials"
-  }' | jq -r '.access_token')
-
-# Test API call
-curl -X GET \
-  -H "Authorization: Bearer $TOKEN" \
-  https://api.yourdomain.com/api/v1/test
-```
-
-## 🔍 Troubleshooting
-
-### APIM Provisioning Takes Long
-**Normal:** APIM can take 45-60 minutes to provision. Check status:
-```bash
-az apim show --resource-group rg-apim-private-dev --name myproject-dev-apim --query provisioningState
-```
-
-### Private Endpoint Not Resolving
-Verify DNS zone is linked to VNet:
-```bash
-az network private-dns link vnet show \
-  --resource-group rg-apim-private-dev \
-  --zone-name privatelink.azurewebsites.net \
-  --name privatelink.azurewebsites.net-link
-```
-
-### JWT Validation Fails (401)
-1. Verify Auth0 domain and audience in APIM named values
-2. Check JWT is valid: jwt.io
-3. Verify Auth0 OpenID config is accessible
-
-### WAF Blocking Requests (403)
-Check WAF logs:
-```kusto
-AzureDiagnostics
-| where Category == "ApplicationGatewayFirewallLog"
-| where action_s == "Blocked"
-| project TimeGenerated, clientIp_s, requestUri_s, ruleId_s
-```
-
-### Key Vault Access Denied
-Verify APIM Managed Identity has permissions:
-```bash
-az keyvault show --name myprojectdevkv --query properties.accessPolicies
-```
-
-## 💰 Cost Estimation
-
-### Development (~$347/month)
-- API Management Developer: ~$50
-- Application Gateway WAF_v2: ~$270
-- Other services: ~$27
-
-### Production (~$6,723-8,023/month)
-- API Management Premium (2 units): ~$5,950
-- Application Gateway WAF_v2 (3-10 instances): ~$700-2,000
-- Other services: ~$73
-
-**Cost Optimization:**
-- Use Azure Reservations (save up to 70%)
-- Right-size APIM SKU (Developer for dev/test)
-- Configure App Gateway autoscaling
-- Set Log Analytics daily cap
-
-## 📚 Monitoring Queries
-
-### API Request Rate
-```kusto
-ApiManagementGatewayLogs
-| where TimeGenerated > ago(1h)
-| summarize RequestCount = count() by bin(TimeGenerated, 5m)
-| render timechart
-```
-
-### Response Time Percentiles
-```kusto
-ApiManagementGatewayLogs
-| where TimeGenerated > ago(1h)
-| summarize 
-    P50 = percentile(DurationMs, 50),
-    P95 = percentile(DurationMs, 95),
-    P99 = percentile(DurationMs, 99)
-  by bin(TimeGenerated, 5m)
-| render timechart
-```
-
-### Error Rate
-```kusto
-ApiManagementGatewayLogs
-| where TimeGenerated > ago(1h)
-| summarize 
-    Total = count(),
-    Errors = countif(ResponseCode >= 400)
-  by bin(TimeGenerated, 5m)
-| extend ErrorRate = (Errors * 100.0) / Total
-| render timechart
-```
-
-### WAF Blocks
-```kusto
-AzureDiagnostics
-| where Category == "ApplicationGatewayFirewallLog"
-| where action_s == "Blocked"
-| summarize BlockCount = count() by ruleId_s, Message
-| order by BlockCount desc
-```
-
-## 🔒 Security Features
-
-- ✅ Private Endpoint connectivity (no public IPs)
-- ✅ WAF v2 with OWASP 3.2 rules
-- ✅ TLS 1.2+ enforcement
-- ✅ Managed Identity for Key Vault access
-- ✅ Network Security Groups with least privilege
-- ✅ JWT token validation with Auth0
-- ✅ Rate limiting and quotas
-- ✅ Comprehensive audit logging
-- ✅ Security headers on all responses
-- ✅ CORS configuration
-
-## 📖 Resources
-
-- [Azure APIM Docs](https://docs.microsoft.com/azure/api-management/)
-- [Application Gateway Docs](https://docs.microsoft.com/azure/application-gateway/)
-- [Private Link Docs](https://docs.microsoft.com/azure/private-link/)
-- [Auth0 Documentation](https://auth0.com/docs)
-- [ARM Templates Reference](https://docs.microsoft.com/azure/templates/)
-
-## 🎯 Next Steps
-
-1. ✅ Configure custom domain and SSL
-2. ✅ Import your APIs
-3. ✅ Apply and test policies
-4. ✅ Configure Auth0
-5. ✅ Set up monitoring alerts
-6. ✅ Conduct load testing
-7. ✅ Document your APIs
-8. ✅ Set up CI/CD
-9. ✅ Train your team
+**Configuration:**
+- APIM SKU: Developer (1 unit)
+- App Gateway: 2 instances
+- WAF Mode: Detection (logs only)
+- Log Retention: 30 days
+- VNet: 10.0.0.0/16
 
 ---
 
-**Questions?** Review the troubleshooting section or consult Azure documentation.
+### Staging Environment
+**Purpose:** Pre-production testing, UAT, performance testing  
+**Network:** 10.5.0.0/16  
 
-**Happy Deploying! 🚀**
+```mermaid
+graph LR
+    Staging[Staging] --> Tests[UAT<br/>Integration Tests<br/>Performance Tests]
+    
+    style Staging fill:#E8F5E9,stroke:#388E3C,stroke-width:2px,color:#000
+    style Tests fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#000
+```
+
+**Configuration:**
+- APIM SKU: Developer (1 unit)
+- App Gateway: 2-7 instances (autoscale)
+- WAF Mode: Prevention (blocks threats)
+- Log Retention: 60 days
+- VNet: 10.5.0.0/16
+
+---
+
+### Production Environment
+**Purpose:** Live customer traffic, mission-critical workloads  
+**Network:** 10.10.0.0/16  
+
+```mermaid
+graph LR
+    Prod[Production] --> Live[Customer Traffic<br/>High Availability<br/>Multi-Region]
+    
+    style Prod fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#000
+    style Live fill:#E1BEE7,stroke:#8E24AA,stroke-width:2px,color:#000
+```
+
+**Configuration:**
+- APIM SKU: Premium (2 units)
+- App Gateway: 3-10 instances (autoscale)
+- WAF Mode: Prevention (blocks threats)
+- Log Retention: 90 days
+- VNet: 10.10.0.0/16
+
+---
+
+## 📊 Side-by-Side Comparison
+
+| Feature | Development | Staging | Production |
+|---------|-------------|---------|------------|
+| **APIM SKU** | Developer | Developer | Premium |
+| **APIM Capacity** | 1 unit | 1 unit | 2 units |
+| **Multi-Region** | ❌ No | ❌ No | ✅ Yes |
+| **App Gateway Min** | 2 instances | 2 instances | 3 instances |
+| **App Gateway Max** | 5 instances | 7 instances | 10 instances |
+| **WAF Mode** | Detection | Prevention | Prevention |
+| **Log Retention** | 30 days | 60 days | 90 days |
+| **VNet Range** | 10.0.0.0/16 | 10.5.0.0/16 | 10.10.0.0/16 |
+| **SLA** | None | None | 99.95% |
+| **Use Case** | Dev & Debug | UAT & Testing | Production |
+
+---
+
+## 🏗️ ARM Template Deployment Sequence
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Main as main.json
+    participant Monitor as monitoring.json
+    participant Network as network.json
+    participant KV as keyvault.json
+    participant APIM as apim.json
+    participant AppGw as appgateway.json
+    
+    User->>Main: 1. Deploy main.json<br/>with parameters
+    
+    Main->>Monitor: 2. Deploy Monitoring
+    Note over Monitor: Creates:<br/>- Log Analytics<br/>- App Insights
+    Monitor-->>Main: Workspace ID
+    
+    Main->>Network: 3. Deploy Network
+    Note over Network: Creates:<br/>- VNet<br/>- 2 Subnets<br/>- 2 NSGs
+    Network-->>Main: Subnet IDs
+    
+    Main->>KV: 4. Deploy Key Vault
+    Note over KV: Creates:<br/>- Key Vault<br/>- Access Policies<br/>- Diagnostics
+    KV-->>Main: Key Vault Name
+    
+    Main->>APIM: 5. Deploy API Management
+    Note over APIM: Creates:<br/>- APIM Service<br/>- Named Values<br/>- Managed Identity<br/>- Diagnostics
+    APIM-->>Main: APIM Private IP<br/>Principal ID
+    
+    Main->>AppGw: 6. Deploy App Gateway
+    Note over AppGw: Creates:<br/>- Public IP<br/>- App Gateway<br/>- WAF Policy<br/>- Backend Pool<br/>- Diagnostics
+    AppGw-->>Main: Public IP & FQDN
+    
+    Main-->>User: Deployment Complete<br/>All Outputs
+```
+
+---
+
+## 📂 ARM Template Files Breakdown
+
+### Template Execution Order
+
+```mermaid
+graph TB
+    Start[Start Deployment] --> Main[main.json<br/>Orchestration]
+    
+    Main --> Step1[monitoring.json]
+    Step1 --> LA[Log Analytics<br/>App Insights]
+    
+    Main --> Step2[network.json]
+    Step2 --> Net[VNet + Subnets<br/>NSG Rules]
+    
+    Main --> Step3[keyvault.json]
+    Step3 --> KV[Key Vault<br/>Access Policies]
+    
+    Main --> Step4[apim.json]
+    Step4 --> APIM[API Management<br/>Internal VNet<br/>Named Values]
+    
+    Main --> Step5[appgateway.json]
+    Step5 --> AppGw[App Gateway<br/>WAF v2<br/>Public IP]
+    
+    LA --> Complete[Deployment Complete]
+    Net --> Complete
+    KV --> Complete
+    APIM --> Complete
+    AppGw --> Complete
+    
+    style Main fill:#E3F2FD,stroke:#1976D2,stroke-width:2px,color:#000
+    style Step1 fill:#FFF3E0,stroke:#F57C00,stroke-width:2px,color:#000
+    style Step2 fill:#E8F5E9,stroke:#388E3C,stroke-width:2px,color:#000
+    style Step3 fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#000
+    style Step4 fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#000
+    style Step5 fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px,color:#000
+    style Complete fill:#C8E6C9,stroke:#388E3C,stroke-width:3px,color:#000
+```
+
+### File Descriptions
+
+| File | Resources Created | Dependencies |
+|------|-------------------|--------------|
+| **main.json** | Orchestrates all deployments | None (entry point) |
+| **monitoring.json** | Log Analytics Workspace<br/>Application Insights | None |
+| **network.json** | Virtual Network<br/>APIM Subnet (10.x.1.0/24)<br/>App Gateway Subnet (10.x.2.0/24)<br/>NSG for APIM<br/>NSG for App Gateway | None |
+| **keyvault.json** | Key Vault<br/>Admin Access Policy<br/>Diagnostic Settings | monitoring.json |
+| **apim.json** | API Management Service<br/>Managed Identity<br/>Named Values (Auth0)<br/>Logger (App Insights)<br/>Diagnostics | network.json<br/>keyvault.json<br/>monitoring.json |
+| **appgateway.json** | Public IP Address<br/>Application Gateway<br/>WAF Policy<br/>Backend Pool (to APIM)<br/>Listeners & Rules<br/>Diagnostics | network.json<br/>apim.json<br/>monitoring.json |
+
+---
+
+## 🚀 Deployment Commands
+
+### Development
+```bash
+# Bash
+./scripts/deploy.sh dev
+
+# PowerShell
+.\scripts\deploy.ps1 -Environment dev
+```
+
+### Staging
+```bash
+# Bash
+./scripts/deploy.sh staging
+
+# PowerShell
+.\scripts\deploy.ps1 -Environment staging
+```
+
+### Production
+```bash
+# Bash
+./scripts/deploy.sh prod
+
+# PowerShell
+.\scripts\deploy.ps1 -Environment prod
+```
+
+---
+
+## 🔄 Promotion Path
+
+```mermaid
+graph LR
+    Dev[Development<br/>10.0.0.0/16] -->|Test & Validate| Staging[Staging<br/>10.5.0.0/16]
+    Staging -->|UAT Approval| Prod[Production<br/>10.10.0.0/16]
+    
+    style Dev fill:#E3F2FD,stroke:#1976D2,stroke-width:2px,color:#000
+    style Staging fill:#E8F5E9,stroke:#388E3C,stroke-width:2px,color:#000
+    style Prod fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#000
+```
+
+**Typical Flow:**
+1. **Dev**: Develop features, test locally
+2. **Staging**: Integration tests, UAT, performance validation
+3. **Production**: Deploy to customers
+
+---
+
+## 📋 Environment Checklist
+
+### Before Deploying to Dev
+- [ ] Update `dev.parameters.json` with Object ID
+- [ ] Update Auth0 dev domain
+- [ ] Configure backend URLs
+
+### Before Deploying to Staging
+- [ ] Copy working config from dev
+- [ ] Update `staging.parameters.json`
+- [ ] Enable WAF Prevention mode
+- [ ] Configure staging Auth0 tenant
+- [ ] Update MuleSoft staging endpoints
+
+### Before Deploying to Production
+- [ ] Validate in staging environment
+- [ ] Review WAF exclusion rules
+- [ ] Upload SSL certificates to Key Vault
+- [ ] Configure custom domain DNS
+- [ ] Enable all monitoring alerts
+- [ ] Document runbook procedures
+- [ ] Plan rollback strategy
+- [ ] Notify stakeholders
+
+---
+
+## 🎯 Best Practices
+
+### Development
+- Use for rapid iteration
+- Test breaking changes
+- Debug with Detection mode WAF
+- Quick feedback loops
+
+### Staging
+- Mirror production configuration
+- Run full integration tests
+- Validate performance under load
+- Test disaster recovery
+- Use Prevention mode WAF
+
+### Production
+- Premium SKU for SLA
+- Multi-region for HA
+- Comprehensive monitoring
+- Regular security audits
+- Automated backups
+
+---
+
+## 💡 Tips
+
+**Network Isolation:**
+- Each environment has separate VNet
+- No network connectivity between environments
+- Prevents accidental cross-environment access
+
+**Testing Strategy:**
+- Dev: Unit tests, feature validation
+- Staging: Integration tests, UAT, load tests
+- Prod: Monitoring, alerting, incident response
+
+**Deployment Time:**
+- Total deployment: 45-60 minutes
+- APIM provisioning: 40-50 minutes (slowest)
+- Network resources: 2-5 minutes
+- App Gateway: 10-15 minutes
+
+---
+
+**Need Help?** Review the main README.md for detailed setup instructions.

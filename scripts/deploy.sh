@@ -188,24 +188,25 @@ display_outputs() {
     # Extract outputs from deployment
     APIM_NAME=$(jq -r '.properties.outputs.apimName.value' deployment-output.json)
     APIM_URL=$(jq -r '.properties.outputs.apimGatewayUrl.value' deployment-output.json)
-    PRIVATE_ENDPOINT_IP=$(jq -r '.properties.outputs.privateEndpointIp.value' deployment-output.json)
-    APP_GATEWAY_IP=$(jq -r '.properties.outputs.appGatewayFrontendIp.value' deployment-output.json)
+    APP_GATEWAY_PUBLIC_IP=$(jq -r '.properties.outputs.appGatewayPublicIp.value' deployment-output.json)
+    APP_GATEWAY_FQDN=$(jq -r '.properties.outputs.appGatewayFqdn.value' deployment-output.json)
     KEY_VAULT_NAME=$(jq -r '.properties.outputs.keyVaultName.value' deployment-output.json)
     
     echo
     print_success "API Management Service: $APIM_NAME"
     print_success "API Gateway URL: $APIM_URL"
-    print_success "Private Endpoint IP: $PRIVATE_ENDPOINT_IP"
-    print_success "App Gateway Private IP: $APP_GATEWAY_IP"
+    print_success "App Gateway Public IP: $APP_GATEWAY_PUBLIC_IP"
+    print_success "App Gateway FQDN: $APP_GATEWAY_FQDN"
     print_success "Key Vault Name: $KEY_VAULT_NAME"
     echo
     
     print_info "Next Steps:"
-    echo "1. Configure DNS to point to Private Endpoint IP: $PRIVATE_ENDPOINT_IP"
-    echo "2. Upload SSL certificates to Key Vault: $KEY_VAULT_NAME"
-    echo "3. Import APIs into APIM: $APIM_NAME"
-    echo "4. Apply APIM policies from ./policies/ directory"
-    echo "5. Configure Auth0 application and update named values"
+    echo "1. Configure DNS to point to Application Gateway: $APP_GATEWAY_PUBLIC_IP"
+    echo "2. Or use the auto-generated FQDN: $APP_GATEWAY_FQDN"
+    echo "3. Upload SSL certificates to Key Vault: $KEY_VAULT_NAME"
+    echo "4. Import APIs into APIM: $APIM_NAME"
+    echo "5. Apply APIM policies from ./policies/ directory"
+    echo "6. Configure Auth0 application and update named values"
     echo
 }
 
