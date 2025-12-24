@@ -1,136 +1,327 @@
 {
+  /*
+   * ============================================================================
+   * MAIN ORCHESTRATION TEMPLATE
+   * ============================================================================
+   * Purpose: Coordinates deployment of all infrastructure components
+   * Entry Point: This is the template you deploy
+   * 
+   * Deployment Order:
+   *   1. monitoring.json  - Log Analytics & Application Insights
+   *   2. network.json     - VNet, Subnets, NSGs
+   *   3. keyvault.json    - Key Vault for secrets
+   *   4. apim.json        - API Management Service
+   *   5. appgateway.json  - Application Gateway + WAF
+   * ============================================================================
+   */
+
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  
   "parameters": {
+    /*
+     * ========================================================================
+     * REQUIRED PARAMETERS - UPDATE THESE IN YOUR PARAMETER FILE
+     * ========================================================================
+     */
+    
     "projectName": {
+      // UPDATE THIS: Your project identifier (e.g., "myproject")
+      // Used as: {projectName}-{environment}-{resource} → myproject-dev-apim
+      // Rules: Lowercase, alphanumeric, max 10 characters
       "type": "string",
       "metadata": {
-        "description": "Project name prefix for all resources"
+        "description": "Project name - used as prefix for all resources"
       }
     },
+    
     "environment": {
+      // UPDATE THIS: Choose your environment
+      // Options: "dev", "staging", "prod"
+      // Each environment has different network ranges and configurations
       "type": "string",
       "allowedValues": ["dev", "staging", "prod"],
       "metadata": {
-        "description": "Environment name"
+        "description": "Environment name - determines configuration"
       }
     },
+    
     "location": {
+      // OPTIONAL: Defaults to resource group location
+      // Override to deploy in different region
       "type": "string",
       "defaultValue": "[resourceGroup().location]",
       "metadata": {
         "description": "Azure region for all resources"
       }
     },
+    
+    /*
+     * ========================================================================
+     * NETWORK CONFIGURATION
+     * Pre-configured per environment in parameter files:
+     *   Dev:     10.0.0.0/16  (10.0.1.0/24 APIM, 10.0.2.0/24 AppGw)
+     *   Staging: 10.5.0.0/16  (10.5.1.0/24 APIM, 10.5.2.0/24 AppGw)
+     *   Prod:    10.10.0.0/16 (10.10.1.0/24 APIM, 10.10.2.0/24 AppGw)
+     * ========================================================================
+     */
+    
     "vnetAddressPrefix": {
+      // VNet CIDR - must contain both APIM and App Gateway subnets
       "type": "string",
       "defaultValue": "10.0.0.0/16",
       "metadata": {
-        "description": "Virtual Network address space"
+        "description": "Virtual Network address space (e.g., 10.0.0.0/16)"
       }
     },
+    
     "apimSubnetPrefix": {
+      // APIM subnet - must be within VNet address space
+      // Recommended: x.x.1.0/24 for consistency
       "type": "string",
       "defaultValue": "10.0.1.0/24",
       "metadata": {
-        "description": "APIM subnet address range"
+        "description": "APIM subnet CIDR - must be within VNet range"
       }
     },
+    
     "appGatewaySubnetPrefix": {
+      // App Gateway subnet - must be within VNet address space
+      // Recommended: x.x.2.0/24 for consistency
       "type": "string",
       "defaultValue": "10.0.2.0/24",
       "metadata": {
-        "description": "Application Gateway subnet address range"
+        "description": "App Gateway subnet CIDR - must be within VNet range"
       }
     },
+    
+    /*
+     * ========================================================================
+     * API MANAGEMENT CONFIGURATION
+     * Developer SKU: For dev/staging (no SLA, single region, lower cost)
+     * Premium SKU:   For production (99.95% SLA, multi-region, full features)
+     * ========================================================================
+     */
+    
     "apimSku": {
+      // UPDATE THIS: Choose SKU based on environment
+      // Developer: ~$50/month, no SLA, single region
+      // Premium: ~$2,975/month per unit, 99.95% SLA, multi-region
       "type": "string",
       "allowedValues": ["Developer", "Premium"],
       "defaultValue": "Developer",
       "metadata": {
-        "description": "API Management SKU"
+        "description": "APIM SKU - Developer (dev/staging) or Premium (prod)"
       }
     },
+    
     "apimCapacity": {
+      // Number of APIM units (instances)
+      // Dev/Staging: 1 unit
+      // Production: 2+ units for high availability
       "type": "int",
       "defaultValue": 1,
       "minValue": 1,
       "maxValue": 10,
       "metadata": {
-        "description": "API Management capacity (units)"
+        "description": "APIM instance count (1 for dev/staging, 2+ for prod)"
       }
     },
+    
+    /*
+     * ========================================================================
+     * APPLICATION GATEWAY CONFIGURATION
+     * Autoscaling: Automatically scales between min and max capacity
+     * ========================================================================
+     */
+    
     "appGatewayCapacity": {
+      // Minimum instances always running
+      // Dev: 2, Staging: 2, Prod: 3
       "type": "int",
       "defaultValue": 2,
       "minValue": 2,
       "maxValue": 10,
       "metadata": {
-        "description": "Application Gateway min instances"
+        "description": "App Gateway minimum instances (2 for dev/staging, 3 for prod)"
       }
     },
+    
     "appGatewayMaxCapacity": {
+      // Maximum instances during high load
+      // Dev: 5, Staging: 7, Prod: 10
       "type": "int",
       "defaultValue": 5,
       "minValue": 2,
       "maxValue": 125,
       "metadata": {
-        "description": "Application Gateway max instances for autoscaling"
+        "description": "App Gateway maximum instances (5 for dev, 7 for staging, 10 for prod)"
       }
     },
+    
+    /*
+     * ========================================================================
+     * AUTH0 INTEGRATION - UPDATE THESE WITH YOUR AUTH0 TENANT DETAILS
+     * 
+     * How to get these values:
+     * 1. Go to: https://manage.auth0.com/
+     * 2. Applications → Your App → Domain (e.g., contoso.auth0.com)
+     * 3. APIs → Your API → Identifier (e.g., https://api.contoso.com)
+     * 
+     * These values are used by APIM policies for JWT validation
+     * ========================================================================
+     */
+    
     "auth0Domain": {
+      // UPDATE THIS: Your Auth0 tenant domain
+      // Example: "contoso.auth0.com" or "contoso.us.auth0.com"
+      // Find it: Auth0 Dashboard → Applications → Your App → Domain
       "type": "string",
       "metadata": {
         "description": "Auth0 tenant domain (e.g., contoso.auth0.com)"
       }
     },
+    
     "auth0Audience": {
+      // UPDATE THIS: Your Auth0 API identifier/audience
+      // Example: "https://api.contoso.com"
+      // Find it: Auth0 Dashboard → APIs → Your API → Identifier
       "type": "string",
       "metadata": {
-        "description": "Auth0 API audience identifier"
+        "description": "Auth0 API audience/identifier (e.g., https://api.contoso.com)"
       }
     },
-    "mulesoftBackendUrl": {
+    
+    /*
+     * ========================================================================
+     * BACKEND API CONFIGURATION - OPTIONAL
+     * 
+     * NOTE: MuleSoft is NOT a backend - it's an external client that calls
+     * your API Gateway. This parameter is for actual backend APIs that APIM
+     * routes to (e.g., your microservices, legacy systems, etc.)
+     * 
+     * If you have a backend service URL, you can store it as an APIM Named
+     * Value for use in policies: {{backend-service-url}}
+     * ========================================================================
+     */
+    
+    "backendServiceUrl": {
+      // OPTIONAL: Your actual backend API URL
+      // Example: "https://backend.contoso.com"
+      // This is the service APIM forwards requests to after validation
+      // Leave empty if you'll configure backends later in APIM portal
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "MuleSoft backend base URL (optional)"
+        "description": "Backend service URL that APIM routes to (optional)"
       }
     },
+    
+    /*
+     * ========================================================================
+     * KEY VAULT ACCESS - UPDATE WITH YOUR AZURE AD OBJECT ID
+     * 
+     * How to get your Object ID:
+     *   Azure CLI:  az ad signed-in-user show --query id -o tsv
+     *   PowerShell: (Get-AzADUser -UserPrincipalName (Get-AzContext).Account).Id
+     * 
+     * This grants you admin access to Key Vault to upload certificates/secrets
+     * ========================================================================
+     */
+    
     "adminObjectId": {
+      // UPDATE THIS: Your Azure AD user or service principal Object ID
+      // This is NOT your email, username, or subscription ID
+      // This is a GUID like: 12345678-1234-1234-1234-123456789012
       "type": "string",
       "metadata": {
         "description": "Azure AD Object ID for Key Vault admin access"
       }
     },
+    
+    /*
+     * ========================================================================
+     * MONITORING CONFIGURATION
+     * ========================================================================
+     */
+    
     "logRetentionDays": {
+      // How long to keep logs in Log Analytics
+      // Dev: 30 days, Staging: 60 days, Prod: 90 days
       "type": "int",
       "defaultValue": 30,
       "minValue": 7,
       "maxValue": 730,
       "metadata": {
-        "description": "Log Analytics retention period in days"
+        "description": "Log Analytics retention in days (30 for dev, 60 for staging, 90 for prod)"
       }
     },
+    
+    /*
+     * ========================================================================
+     * WAF (WEB APPLICATION FIREWALL) CONFIGURATION
+     * 
+     * Detection Mode: Logs threats but doesn't block (use for dev)
+     * Prevention Mode: Blocks threats (use for staging/prod)
+     * ========================================================================
+     */
+    
     "enableWafPreventionMode": {
+      // false = Detection mode (logs only, good for testing)
+      // true = Prevention mode (blocks threats, use in production)
       "type": "bool",
-      "defaultValue": true,
+      "defaultValue": false,
       "metadata": {
-        "description": "Enable WAF in Prevention mode (true) or Detection mode (false)"
+        "description": "Enable WAF Prevention mode - false=Detection, true=Prevention"
       }
     }
   },
+  
+  /*
+   * ==========================================================================
+   * VARIABLES - AUTOMATICALLY COMPUTED (DO NOT MODIFY)
+   * These are generated from your parameters
+   * ==========================================================================
+   */
+  
   "variables": {
+    // Naming prefix: {projectName}-{environment}
+    // Example: "myproject-dev"
     "namingPrefix": "[concat(parameters('projectName'), '-', parameters('environment'))]",
-    "vnetName": "[concat(variables('namingPrefix'), '-vnet')]",
-    "apimName": "[concat(variables('namingPrefix'), '-apim')]",
-    "appGatewayName": "[concat(variables('namingPrefix'), '-appgw')]",
-    "keyVaultName": "[concat(replace(variables('namingPrefix'), '-', ''), 'kv')]",
-    "logAnalyticsName": "[concat(variables('namingPrefix'), '-la')]",
-    "appInsightsName": "[concat(variables('namingPrefix'), '-ai')]",
+    
+    // Resource names - all auto-generated from naming prefix
+    "vnetName": "[concat(variables('namingPrefix'), '-vnet')]",              // Example: myproject-dev-vnet
+    "apimName": "[concat(variables('namingPrefix'), '-apim')]",              // Example: myproject-dev-apim
+    "appGatewayName": "[concat(variables('namingPrefix'), '-appgw')]",       // Example: myproject-dev-appgw
+    "keyVaultName": "[concat(replace(variables('namingPrefix'), '-', ''), 'kv')]",  // Example: myprojectdevkv (no dashes - KV naming rules)
+    "logAnalyticsName": "[concat(variables('namingPrefix'), '-la')]",        // Example: myproject-dev-la
+    "appInsightsName": "[concat(variables('namingPrefix'), '-ai')]",         // Example: myproject-dev-ai
     "deploymentScriptIdentityName": "[concat(variables('namingPrefix'), '-ds-identity')]"
   },
+  
+  /*
+   * ==========================================================================
+   * RESOURCES - LINKED TEMPLATE DEPLOYMENTS
+   * 
+   * These deploy in sequence, passing outputs as inputs to dependent templates
+   * Each template creates specific Azure resources
+   * ==========================================================================
+   */
+  
   "resources": [
+    /*
+     * ----------------------------------------------------------------------
+     * STEP 1: MONITORING - Deploy Log Analytics and Application Insights
+     * 
+     * Dependencies: None (deploys first)
+     * Creates:
+     *   - Log Analytics Workspace (centralized logging)
+     *   - Application Insights (APM and telemetry)
+     * Returns:
+     *   - logAnalyticsWorkspaceId → Used by all other resources
+     *   - appInsightsInstrumentationKey → Used by APIM
+     * ----------------------------------------------------------------------
+     */
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2021-04-01",
@@ -138,24 +329,35 @@
       "properties": {
         "mode": "Incremental",
         "templateLink": {
+          // Links to monitoring.json in same directory
           "uri": "[uri(deployment().properties.templateLink.uri, 'monitoring.json')]"
         },
         "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "logAnalyticsName": {
-            "value": "[variables('logAnalyticsName')]"
-          },
-          "appInsightsName": {
-            "value": "[variables('appInsightsName')]"
-          },
-          "retentionDays": {
-            "value": "[parameters('logRetentionDays')]"
-          }
+          // Pass values from main.json parameters to monitoring.json
+          "location": { "value": "[parameters('location')]" },
+          "logAnalyticsName": { "value": "[variables('logAnalyticsName')]" },
+          "appInsightsName": { "value": "[variables('appInsightsName')]" },
+          "retentionInDays": { "value": "[parameters('logRetentionDays')]" }
         }
       }
     },
+    
+    /*
+     * ----------------------------------------------------------------------
+     * STEP 2: NETWORK - Deploy VNet, Subnets, and Network Security Groups
+     * 
+     * Dependencies: None (deploys in parallel with monitoring)
+     * Creates:
+     *   - Virtual Network with your specified CIDR
+     *   - APIM Subnet (10.x.1.0/24)
+     *   - App Gateway Subnet (10.x.2.0/24)
+     *   - NSG for APIM (allows management traffic)
+     *   - NSG for App Gateway (allows public HTTPS)
+     * Returns:
+     *   - apimSubnetId → Used by apim.json
+     *   - appGatewaySubnetId → Used by appgateway.json
+     * ----------------------------------------------------------------------
+     */
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2021-04-01",
@@ -166,30 +368,36 @@
           "uri": "[uri(deployment().properties.templateLink.uri, 'network.json')]"
         },
         "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "vnetName": {
-            "value": "[variables('vnetName')]"
-          },
-          "vnetAddressPrefix": {
-            "value": "[parameters('vnetAddressPrefix')]"
-          },
-          "apimSubnetPrefix": {
-            "value": "[parameters('apimSubnetPrefix')]"
-          },
-          "appGatewaySubnetPrefix": {
-            "value": "[parameters('appGatewaySubnetPrefix')]"
-          }
+          "location": { "value": "[parameters('location')]" },
+          "vnetName": { "value": "[variables('vnetName')]" },
+          "vnetAddressPrefix": { "value": "[parameters('vnetAddressPrefix')]" },
+          "apimSubnetPrefix": { "value": "[parameters('apimSubnetPrefix')]" },
+          "appGatewaySubnetPrefix": { "value": "[parameters('appGatewaySubnetPrefix')]" }
         }
       }
     },
+    
+    /*
+     * ----------------------------------------------------------------------
+     * STEP 3: KEY VAULT - Deploy secure storage for certificates and secrets
+     * 
+     * Dependencies: monitoringDeployment (needs workspace ID for diagnostics)
+     * Creates:
+     *   - Key Vault with soft delete and purge protection
+     *   - Access policy for admin (you)
+     *   - Diagnostic settings (sends audit logs to Log Analytics)
+     * Returns:
+     *   - keyVaultName → Used for manual secret upload post-deployment
+     * 
+     * NOTE: APIM Managed Identity access is granted POST-DEPLOYMENT
+     * ----------------------------------------------------------------------
+     */
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2021-04-01",
       "name": "keyVaultDeployment",
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'networkDeployment')]"
+        "[resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')]"
       ],
       "properties": {
         "mode": "Incremental",
@@ -197,21 +405,44 @@
           "uri": "[uri(deployment().properties.templateLink.uri, 'keyvault.json')]"
         },
         "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "keyVaultName": {
-            "value": "[variables('keyVaultName')]"
-          },
-          "adminObjectId": {
-            "value": "[parameters('adminObjectId')]"
-          },
+          "location": { "value": "[parameters('location')]" },
+          "keyVaultName": { "value": "[variables('keyVaultName')]" },
+          "adminObjectId": { "value": "[parameters('adminObjectId')]" },
+          // Gets workspace ID from monitoring deployment output
           "logAnalyticsWorkspaceId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.logAnalyticsWorkspaceId.value]"
           }
         }
       }
     },
+    
+    /*
+     * ----------------------------------------------------------------------
+     * STEP 4: API MANAGEMENT - Deploy APIM in Internal VNet mode
+     * 
+     * Dependencies: 
+     *   - networkDeployment (needs APIM subnet ID)
+     *   - keyVaultDeployment (for later secret access)
+     *   - monitoringDeployment (needs workspace ID and instrumentation key)
+     * 
+     * Creates:
+     *   - API Management Service (Developer or Premium SKU)
+     *   - Managed Identity (for Key Vault access)
+     *   - Named Values: auth0-domain, auth0-audience, backend-service-url
+     *   - Application Insights logger
+     *   - TLS 1.2+ enforcement
+     *   - Diagnostic settings
+     * 
+     * Returns:
+     *   - apimPrivateIp → Used by App Gateway backend pool
+     *   - apimPrincipalId → Used to grant Key Vault access
+     * 
+     * NOTE: MuleSoft is an EXTERNAL CLIENT, not a backend service.
+     *       It connects TO your API Gateway like any other client.
+     * 
+     * IMPORTANT: Deployment takes 40-50 minutes!
+     * ----------------------------------------------------------------------
+     */
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2021-04-01",
@@ -227,45 +458,52 @@
           "uri": "[uri(deployment().properties.templateLink.uri, 'apim.json')]"
         },
         "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "apimName": {
-            "value": "[variables('apimName')]"
-          },
-          "apimSku": {
-            "value": "[parameters('apimSku')]"
-          },
-          "apimCapacity": {
-            "value": "[parameters('apimCapacity')]"
-          },
-          "vnetName": {
-            "value": "[variables('vnetName')]"
-          },
-          "apimSubnetName": {
-            "value": "apim-subnet"
-          },
-          "keyVaultName": {
-            "value": "[variables('keyVaultName')]"
-          },
-          "auth0Domain": {
-            "value": "[parameters('auth0Domain')]"
-          },
-          "auth0Audience": {
-            "value": "[parameters('auth0Audience')]"
-          },
-          "mulesoftBackendUrl": {
-            "value": "[parameters('mulesoftBackendUrl')]"
+          "location": { "value": "[parameters('location')]" },
+          "apimName": { "value": "[variables('apimName')]" },
+          "apimSku": { "value": "[parameters('apimSku')]" },
+          "apimCapacity": { "value": "[parameters('apimCapacity')]" },
+          "vnetName": { "value": "[variables('vnetName')]" },
+          "apimSubnetName": { "value": "apim-subnet" },  // Fixed name from network.json
+          "auth0Domain": { "value": "[parameters('auth0Domain')]" },
+          "auth0Audience": { "value": "[parameters('auth0Audience')]" },
+          "backendServiceUrl": { "value": "[parameters('backendServiceUrl')]" },
+          // Gets instrumentation key from monitoring deployment
+          "appInsightsInstrumentationKey": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.appInsightsInstrumentationKey.value]"
           },
           "logAnalyticsWorkspaceId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.logAnalyticsWorkspaceId.value]"
-          },
-          "appInsightsInstrumentationKey": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.appInsightsInstrumentationKey.value]"
           }
         }
       }
     },
+    
+    /*
+     * ----------------------------------------------------------------------
+     * STEP 5: APPLICATION GATEWAY - Deploy public WAF and load balancer
+     * 
+     * Dependencies:
+     *   - networkDeployment (needs App Gateway subnet ID)
+     *   - apimDeployment (needs APIM private IP for backend pool)
+     *   - monitoringDeployment (needs workspace ID)
+     * 
+     * Creates:
+     *   - Public IP Address (static)
+     *   - Auto-generated FQDN: {projectName}-{environment}-appgw.{region}.cloudapp.azure.com
+     *   - Application Gateway with WAF_v2
+     *   - WAF Policy (OWASP 3.2 + Bot Manager)
+     *   - Backend Pool targeting APIM private IP
+     *   - HTTP to HTTPS redirect rule
+     *   - Autoscaling configuration
+     *   - Diagnostic settings
+     * 
+     * Returns:
+     *   - publicIpAddress → Use for DNS A record
+     *   - publicIpFqdn → Use to access APIs immediately
+     * 
+     * NOTE: SSL certificate must be added post-deployment
+     * ----------------------------------------------------------------------
+     */
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2021-04-01",
@@ -273,7 +511,6 @@
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'networkDeployment')]",
         "[resourceId('Microsoft.Resources/deployments', 'apimDeployment')]",
-        "[resourceId('Microsoft.Resources/deployments', 'keyVaultDeployment')]",
         "[resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')]"
       ],
       "properties": {
@@ -282,67 +519,89 @@
           "uri": "[uri(deployment().properties.templateLink.uri, 'appgateway.json')]"
         },
         "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "appGatewayName": {
-            "value": "[variables('appGatewayName')]"
-          },
-          "vnetName": {
-            "value": "[variables('vnetName')]"
-          },
-          "appGatewaySubnetName": {
-            "value": "appgateway-subnet"
-          },
+          "location": { "value": "[parameters('location')]" },
+          "appGatewayName": { "value": "[variables('appGatewayName')]" },
+          "vnetName": { "value": "[variables('vnetName')]" },
+          "appGatewaySubnetName": { "value": "appgateway-subnet" },  // Fixed name from network.json
+          "minCapacity": { "value": "[parameters('appGatewayCapacity')]" },
+          "maxCapacity": { "value": "[parameters('appGatewayMaxCapacity')]" },
+          // CRITICAL: Gets APIM's private IP to route traffic internally
           "apimPrivateIp": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'apimDeployment')).outputs.apimPrivateIp.value]"
           },
-          "minCapacity": {
-            "value": "[parameters('appGatewayCapacity')]"
-          },
-          "maxCapacity": {
-            "value": "[parameters('appGatewayMaxCapacity')]"
-          },
-          "enableWafPreventionMode": {
-            "value": "[parameters('enableWafPreventionMode')]"
-          },
+          "enableWafPreventionMode": { "value": "[parameters('enableWafPreventionMode')]" },
           "logAnalyticsWorkspaceId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.logAnalyticsWorkspaceId.value]"
           }
         }
       }
-    },
-
+    }
   ],
+  
+  /*
+   * ==========================================================================
+   * OUTPUTS - Values returned after successful deployment
+   * 
+   * Use these values for:
+   *   - Post-deployment configuration
+   *   - DNS setup
+   *   - API access
+   *   - Troubleshooting
+   * ==========================================================================
+   */
+  
   "outputs": {
-    "vnetId": {
-      "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networkDeployment')).outputs.vnetId.value]"
-    },
+    // API Management details
     "apimName": {
       "type": "string",
-      "value": "[variables('apimName')]"
+      "value": "[variables('apimName')]",
+      "metadata": {
+        "description": "APIM service name - use to import APIs"
+      }
     },
     "apimGatewayUrl": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'apimDeployment')).outputs.apimGatewayUrl.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'apimDeployment')).outputs.apimGatewayUrl.value]",
+      "metadata": {
+        "description": "APIM gateway URL - internal only, access via App Gateway"
+      }
     },
+    
+    // Application Gateway details - USE THESE TO ACCESS YOUR APIS
     "appGatewayPublicIp": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpAddress.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpAddress.value]",
+      "metadata": {
+        "description": "Public IP - create DNS A record pointing to this"
+      }
     },
     "appGatewayFqdn": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpFqdn.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpFqdn.value]",
+      "metadata": {
+        "description": "Auto-generated FQDN - use this to access APIs immediately without DNS setup"
+      }
     },
+    
+    // Key Vault details
     "keyVaultName": {
       "type": "string",
-      "value": "[variables('keyVaultName')]"
+      "value": "[variables('keyVaultName')]",
+      "metadata": {
+        "description": "Key Vault name - upload SSL certificates and secrets here"
+      }
     },
+    
+    // Monitoring details
     "logAnalyticsWorkspaceId": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.logAnalyticsWorkspaceId.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoringDeployment')).outputs.logAnalyticsWorkspaceId.value]",
+      "metadata": {
+        "description": "Log Analytics workspace resource ID - use for Kusto queries"
+      }
     },
+    
+    // Complete summary object
     "deploymentSummary": {
       "type": "object",
       "value": {
@@ -354,6 +613,9 @@
         "apimUrl": "[reference(resourceId('Microsoft.Resources/deployments', 'apimDeployment')).outputs.apimGatewayUrl.value]",
         "appGatewayPublicIp": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpAddress.value]",
         "appGatewayFqdn": "[reference(resourceId('Microsoft.Resources/deployments', 'appGatewayDeployment')).outputs.publicIpFqdn.value]"
+      },
+      "metadata": {
+        "description": "Complete deployment summary with all key information"
       }
     }
   }

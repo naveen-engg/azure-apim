@@ -116,8 +116,8 @@ graph LR
 
 ### External Clients
 - **Client Applications**: Mobile apps, web apps, SPAs
-- **Auth0**: Issues JWT tokens, validates tokens via JWKS endpoint
-- **MuleSoft**: External integration platform making API calls
+- **Auth0**: Issues JWT tokens, validates tokens via JWKS endpoint  
+- **MuleSoft**: External integration platform acting as an API client (connects TO your API Gateway)
 
 ### Flow Pattern
 ```
@@ -128,9 +128,14 @@ Public IP / FQDN (Static IP Address)
 Application Gateway WAF v2 (Public Frontend)
     ↓ Internal VNet Traffic
 API Management (Internal VNet Mode)
-    ↓
-Backend APIs
+    ↓ validates JWT, applies policies
+Backend APIs (Your microservices, legacy systems, databases)
 ```
+
+### Key Clarification
+- **MuleSoft is NOT a backend** - it's an external client that makes API calls
+- **Backend APIs** are your actual services that APIM routes to (e.g., microservices, databases)
+- **Auth0** provides authentication; APIM validates tokens but doesn't route to Auth0
 
 ---
 
@@ -197,9 +202,14 @@ Edit `parameters/dev.parameters.json`:
   },
   "auth0Audience": {
     "value": "https://api.yourdomain.com"
+  },
+  "backendServiceUrl": {
+    "value": "https://backend.yourdomain.com"  // OPTIONAL: Your actual backend API
   }
 }
 ```
+
+**Note:** MuleSoft doesn't need to be configured here - it's an external client that calls your API Gateway, just like any other client application.
 
 ### Step 3: Deploy
 
@@ -248,7 +258,7 @@ chmod +x scripts/deploy.sh
 | `appGatewayMaxCapacity` | 5 | 7 | 10 |
 | `enableWafPreventionMode` | false (Detection) | true (Prevention) | true (Prevention) |
 | `logRetentionDays` | 30 days | 60 days | 90 days |
-
+| **Est. Monthly Cost** | ~$340 | ~$340 | ~$6,716-8,016 |
 
 ### Network Layout
 
@@ -421,7 +431,6 @@ curl -X GET \
 ---
 
 
-
 ## 📊 Monitoring Queries
 
 ### API Request Rate
@@ -527,11 +536,9 @@ This architecture provides a production-ready Azure API Management solution with
 - ✅ Public-facing Application Gateway with WAF v2
 - ✅ Internal API Management for security
 - ✅ Auth0 authentication integration
-- ✅ MuleSoft client support
+- ✅ Support for external clients (including MuleSoft integration platforms)
 - ✅ Comprehensive monitoring and logging
 - ✅ Infrastructure as Code with ARM templates
 - ✅ Multi-layer security controls
-- ✅ Cost-optimized for each environment
 
 
----

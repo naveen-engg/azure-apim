@@ -1,36 +1,66 @@
 {
+  /*
+   * ============================================================================
+   * MONITORING TEMPLATE - Log Analytics & Application Insights
+   * ============================================================================
+   * Purpose: Creates centralized logging and APM infrastructure
+   * 
+   * Dependencies: None (deploys first)
+   * 
+   * Resources Created:
+   *   1. Log Analytics Workspace - Centralized log storage for all services
+   *   2. Application Insights - APM and telemetry collection
+   * 
+   * Returns:
+   *   - logAnalyticsWorkspaceId → Used by all other resources for diagnostics
+   *   - appInsightsInstrumentationKey → Used by APIM for logging
+   * ============================================================================
+   */
+
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  
   "parameters": {
     "location": {
+      // Azure region - passed from main.json
       "type": "string",
       "metadata": {
-        "description": "Azure region"
+        "description": "Azure region for monitoring resources"
       }
     },
+    
     "logAnalyticsName": {
+      // Generated as: {projectName}-{environment}-la
+      // Example: myproject-dev-la
       "type": "string",
       "metadata": {
         "description": "Log Analytics Workspace name"
       }
     },
+    
     "appInsightsName": {
+      // Generated as: {projectName}-{environment}-ai
+      // Example: myproject-dev-ai
       "type": "string",
       "metadata": {
-        "description": "Application Insights name"
+        "description": "Application Insights component name"
       }
     },
-    "retentionDays": {
+    
+    "retentionInDays": {
+      // Dev: 30 days, Staging: 60 days, Prod: 90 days
       "type": "int",
       "defaultValue": 30,
       "minValue": 7,
       "maxValue": 730,
       "metadata": {
-        "description": "Log retention in days"
+        "description": "Log retention period in days"
       }
     }
   },
+  
   "resources": [
+    // LOG ANALYTICS WORKSPACE - Centralized log storage
     {
       "type": "Microsoft.OperationalInsights/workspaces",
       "apiVersion": "2022-10-01",
@@ -38,19 +68,21 @@
       "location": "[parameters('location')]",
       "properties": {
         "sku": {
-          "name": "PerGB2018"
+          "name": "PerGB2018"  // Pay-as-you-go pricing
         },
-        "retentionInDays": "[parameters('retentionDays')]",
+        "retentionInDays": "[parameters('retentionInDays')]",
         "features": {
           "enableLogAccessUsingOnlyResourcePermissions": true
         },
         "workspaceCapping": {
-          "dailyQuotaGb": -1
+          "dailyQuotaGb": -1  // Unlimited ingestion
         },
         "publicNetworkAccessForIngestion": "Enabled",
         "publicNetworkAccessForQuery": "Enabled"
       }
     },
+    
+    // APPLICATION INSIGHTS - APM and telemetry
     {
       "type": "Microsoft.Insights/components",
       "apiVersion": "2020-02-02",
@@ -62,39 +94,49 @@
       ],
       "properties": {
         "Application_Type": "web",
+        // Linked to Log Analytics Workspace
         "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]",
-        "RetentionInDays": "[parameters('retentionDays')]",
+        "RetentionInDays": "[parameters('retentionInDays')]",
         "IngestionMode": "LogAnalytics",
         "publicNetworkAccessForIngestion": "Enabled",
         "publicNetworkAccessForQuery": "Enabled"
       }
     }
   ],
+  
   "outputs": {
+    // Used by: keyvault.json, apim.json, appgateway.json for diagnostic settings
     "logAnalyticsWorkspaceId": {
       "type": "string",
       "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
     },
+    
     "logAnalyticsWorkspaceName": {
       "type": "string",
       "value": "[parameters('logAnalyticsName')]"
     },
+    
     "logAnalyticsCustomerId": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))).customerId]"
     },
+    
     "appInsightsId": {
       "type": "string",
       "value": "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]"
     },
+    
     "appInsightsName": {
       "type": "string",
       "value": "[parameters('appInsightsName')]"
     },
+    
+    // CRITICAL: Used by apim.json to create logger
     "appInsightsInstrumentationKey": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName'))).InstrumentationKey]"
     },
+    
     "appInsightsConnectionString": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName'))).ConnectionString]"

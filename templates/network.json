@@ -1,272 +1,242 @@
 {
+  /*
+   * ============================================================================
+   * NETWORK TEMPLATE - VNet, Subnets, NSGs
+   * ============================================================================
+   * Purpose: Creates isolated network infrastructure with security
+   * 
+   * Dependencies: None (deploys in parallel with monitoring)
+   * 
+   * Resources Created:
+   *   1. NSG for APIM - Controls traffic to APIM subnet
+   *   2. NSG for App Gateway - Controls public access
+   *   3. Virtual Network - Isolated network (10.x.0.0/16)
+   *   4. APIM Subnet - For API Management (10.x.1.0/24)
+   *   5. App Gateway Subnet - For Application Gateway (10.x.2.0/24)
+   * 
+   * Returns:
+   *   - apimSubnetId → Used by apim.json for VNet integration
+   *   - appGatewaySubnetId → Used by appgateway.json for placement
+   * ============================================================================
+   */
+
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  
   "parameters": {
     "location": {
-      "type": "string",
-      "metadata": {
-        "description": "Azure region"
-      }
+      // Azure region
+      "type": "string"
     },
     "vnetName": {
-      "type": "string",
-      "metadata": {
-        "description": "Virtual Network name"
-      }
+      // Generated as: {projectName}-{environment}-vnet
+      "type": "string"
     },
     "vnetAddressPrefix": {
-      "type": "string",
-      "metadata": {
-        "description": "VNet address space"
-      }
+      // Dev: 10.0.0.0/16, Staging: 10.5.0.0/16, Prod: 10.10.0.0/16
+      "type": "string"
     },
     "apimSubnetPrefix": {
-      "type": "string",
-      "metadata": {
-        "description": "APIM subnet address range"
-      }
+      // Must be within VNet range - typically 10.x.1.0/24
+      "type": "string"
     },
     "appGatewaySubnetPrefix": {
-      "type": "string",
-      "metadata": {
-        "description": "Application Gateway subnet address range"
-      }
+      // Must be within VNet range - typically 10.x.2.0/24
+      "type": "string"
     }
   },
-  "variables": {
-    "apimNsgName": "[concat(parameters('vnetName'), '-apim-nsg')]",
-    "appGatewayNsgName": "[concat(parameters('vnetName'), '-appgw-nsg')]"
-  },
+  
   "resources": [
+    /*
+     * NSG FOR APIM SUBNET
+     * Allows: Management traffic (3443), Health probes (6390), Internal HTTPS (443)
+     */
     {
       "type": "Microsoft.Network/networkSecurityGroups",
       "apiVersion": "2023-04-01",
-      "name": "[variables('apimNsgName')]",
+      "name": "[concat(parameters('vnetName'), '-apim-nsg')]",
       "location": "[parameters('location')]",
       "properties": {
         "securityRules": [
           {
-            "name": "Allow-APIM-Management-Inbound",
+            "name": "AllowApiManagementControl",
+            // Port 3443 - APIM management endpoint
             "properties": {
-              "description": "Management endpoint for Azure portal and PowerShell",
+              "priority": 100,
+              "direction": "Inbound",
+              "access": "Allow",
               "protocol": "Tcp",
               "sourcePortRange": "*",
               "destinationPortRange": "3443",
               "sourceAddressPrefix": "ApiManagement",
-              "destinationAddressPrefix": "VirtualNetwork",
-              "access": "Allow",
-              "priority": 100,
-              "direction": "Inbound"
+              "destinationAddressPrefix": "VirtualNetwork"
             }
           },
           {
-            "name": "Allow-Azure-Infrastructure-Load-Balancer",
+            "name": "AllowAzureLoadBalancer",
+            // Port 6390 - Health probe traffic
             "properties": {
-              "description": "Azure Infrastructure Load Balancer",
+              "priority": 110,
+              "direction": "Inbound",
+              "access": "Allow",
               "protocol": "Tcp",
               "sourcePortRange": "*",
               "destinationPortRange": "6390",
               "sourceAddressPrefix": "AzureLoadBalancer",
-              "destinationAddressPrefix": "VirtualNetwork",
-              "access": "Allow",
-              "priority": 110,
-              "direction": "Inbound"
+              "destinationAddressPrefix": "VirtualNetwork"
             }
           },
           {
-            "name": "Allow-HTTPS-From-AppGateway",
+            "name": "AllowAppGatewayTraffic",
+            // Port 443 - Traffic FROM App Gateway TO APIM
             "properties": {
-              "description": "Allow HTTPS traffic from Application Gateway subnet",
+              "priority": 120,
+              "direction": "Inbound",
+              "access": "Allow",
               "protocol": "Tcp",
               "sourcePortRange": "*",
               "destinationPortRange": "443",
               "sourceAddressPrefix": "[parameters('appGatewaySubnetPrefix')]",
-              "destinationAddressPrefix": "VirtualNetwork",
-              "access": "Allow",
-              "priority": 120,
-              "direction": "Inbound"
-            }
-          },
-          {
-            "name": "Allow-Azure-Storage-Outbound",
-            "properties": {
-              "description": "Dependency on Azure Storage",
-              "protocol": "Tcp",
-              "sourcePortRange": "*",
-              "destinationPortRange": "443",
-              "sourceAddressPrefix": "VirtualNetwork",
-              "destinationAddressPrefix": "Storage",
-              "access": "Allow",
-              "priority": 100,
-              "direction": "Outbound"
-            }
-          },
-          {
-            "name": "Allow-Azure-SQL-Outbound",
-            "properties": {
-              "description": "Access to Azure SQL endpoints",
-              "protocol": "Tcp",
-              "sourcePortRange": "*",
-              "destinationPortRange": "1433",
-              "sourceAddressPrefix": "VirtualNetwork",
-              "destinationAddressPrefix": "Sql",
-              "access": "Allow",
-              "priority": 110,
-              "direction": "Outbound"
-            }
-          },
-          {
-            "name": "Allow-Azure-KeyVault-Outbound",
-            "properties": {
-              "description": "Access to Azure Key Vault",
-              "protocol": "Tcp",
-              "sourcePortRange": "*",
-              "destinationPortRange": "443",
-              "sourceAddressPrefix": "VirtualNetwork",
-              "destinationAddressPrefix": "AzureKeyVault",
-              "access": "Allow",
-              "priority": 120,
-              "direction": "Outbound"
+              "destinationAddressPrefix": "*"
             }
           }
         ]
       }
     },
+    
+    /*
+     * NSG FOR APP GATEWAY SUBNET
+     * Allows: Public HTTPS/HTTP (443/80), Gateway Manager ports
+     */
     {
       "type": "Microsoft.Network/networkSecurityGroups",
       "apiVersion": "2023-04-01",
-      "name": "[variables('appGatewayNsgName')]",
+      "name": "[concat(parameters('vnetName'), '-appgw-nsg')]",
       "location": "[parameters('location')]",
       "properties": {
         "securityRules": [
           {
-            "name": "Allow-HTTPS-Inbound",
+            "name": "AllowHTTPS",
+            // Port 443 - Public HTTPS traffic from Internet
             "properties": {
-              "description": "Allow HTTPS traffic",
+              "priority": 100,
+              "direction": "Inbound",
+              "access": "Allow",
               "protocol": "Tcp",
               "sourcePortRange": "*",
               "destinationPortRange": "443",
-              "sourceAddressPrefix": "*",
-              "destinationAddressPrefix": "*",
-              "access": "Allow",
-              "priority": 100,
-              "direction": "Inbound"
+              "sourceAddressPrefix": "Internet",
+              "destinationAddressPrefix": "*"
             }
           },
           {
-            "name": "Allow-HTTP-Inbound",
+            "name": "AllowHTTP",
+            // Port 80 - Public HTTP (will redirect to HTTPS)
             "properties": {
-              "description": "Allow HTTP traffic (redirect to HTTPS)",
+              "priority": 110,
+              "direction": "Inbound",
+              "access": "Allow",
               "protocol": "Tcp",
               "sourcePortRange": "*",
               "destinationPortRange": "80",
-              "sourceAddressPrefix": "*",
-              "destinationAddressPrefix": "*",
-              "access": "Allow",
-              "priority": 110,
-              "direction": "Inbound"
+              "sourceAddressPrefix": "Internet",
+              "destinationAddressPrefix": "*"
             }
           },
           {
-            "name": "Allow-GatewayManager-Inbound",
+            "name": "AllowGatewayManager",
+            // Ports 65200-65535 - Azure infrastructure management
             "properties": {
-              "description": "Allow Azure Gateway Manager",
+              "priority": 120,
+              "direction": "Inbound",
+              "access": "Allow",
               "protocol": "Tcp",
               "sourcePortRange": "*",
               "destinationPortRange": "65200-65535",
               "sourceAddressPrefix": "GatewayManager",
-              "destinationAddressPrefix": "*",
-              "access": "Allow",
-              "priority": 120,
-              "direction": "Inbound"
-            }
-          },
-          {
-            "name": "Allow-AzureLoadBalancer-Inbound",
-            "properties": {
-              "description": "Allow Azure Load Balancer",
-              "protocol": "*",
-              "sourcePortRange": "*",
-              "destinationPortRange": "*",
-              "sourceAddressPrefix": "AzureLoadBalancer",
-              "destinationAddressPrefix": "*",
-              "access": "Allow",
-              "priority": 130,
-              "direction": "Inbound"
+              "destinationAddressPrefix": "*"
             }
           }
         ]
       }
     },
+    
+    /*
+     * VIRTUAL NETWORK
+     * Isolated network space for all resources
+     */
     {
       "type": "Microsoft.Network/virtualNetworks",
       "apiVersion": "2023-04-01",
       "name": "[parameters('vnetName')]",
       "location": "[parameters('location')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Network/networkSecurityGroups', variables('apimNsgName'))]",
-        "[resourceId('Microsoft.Network/networkSecurityGroups', variables('appGatewayNsgName'))]"
+        "[resourceId('Microsoft.Network/networkSecurityGroups', concat(parameters('vnetName'), '-apim-nsg'))]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', concat(parameters('vnetName'), '-appgw-nsg'))]"
       ],
       "properties": {
         "addressSpace": {
           "addressPrefixes": [
-            "[parameters('vnetAddressPrefix')]"
+            "[parameters('vnetAddressPrefix')]"  // e.g., 10.0.0.0/16
           ]
         },
         "subnets": [
+          /*
+           * APIM SUBNET - Internal VNet mode
+           * Service Endpoints: Storage, SQL, Key Vault
+           */
           {
             "name": "apim-subnet",
             "properties": {
-              "addressPrefix": "[parameters('apimSubnetPrefix')]",
+              "addressPrefix": "[parameters('apimSubnetPrefix')]",  // e.g., 10.0.1.0/24
               "networkSecurityGroup": {
-                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('apimNsgName'))]"
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', concat(parameters('vnetName'), '-apim-nsg'))]"
               },
               "serviceEndpoints": [
-                {
-                  "service": "Microsoft.Storage"
-                },
-                {
-                  "service": "Microsoft.Sql"
-                },
-                {
-                  "service": "Microsoft.KeyVault"
-                },
-                {
-                  "service": "Microsoft.EventHub"
-                }
+                { "service": "Microsoft.Storage" },
+                { "service": "Microsoft.Sql" },
+                { "service": "Microsoft.KeyVault" }
               ],
-              "delegations": []
+              "delegations": [],
+              "privateEndpointNetworkPolicies": "Disabled",
+              "privateLinkServiceNetworkPolicies": "Enabled"
             }
           },
+          /*
+           * APP GATEWAY SUBNET - Public-facing
+           * No delegation needed
+           */
           {
             "name": "appgateway-subnet",
             "properties": {
-              "addressPrefix": "[parameters('appGatewaySubnetPrefix')]",
+              "addressPrefix": "[parameters('appGatewaySubnetPrefix')]",  // e.g., 10.0.2.0/24
               "networkSecurityGroup": {
-                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('appGatewayNsgName'))]"
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', concat(parameters('vnetName'), '-appgw-nsg'))]"
               },
-              "serviceEndpoints": [],
-              "delegations": []
+              "delegations": [],
+              "privateEndpointNetworkPolicies": "Disabled",
+              "privateLinkServiceNetworkPolicies": "Enabled"
             }
           }
         ],
-        "enableDdosProtection": false
+        "enableDdosProtection": false  // Basic DDoS protection (included free)
       }
     }
   ],
+  
   "outputs": {
     "vnetId": {
       "type": "string",
       "value": "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
     },
-    "vnetName": {
-      "type": "string",
-      "value": "[parameters('vnetName')]"
-    },
+    
+    // Used by: apim.json for VNet integration
     "apimSubnetId": {
       "type": "string",
       "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'apim-subnet')]"
     },
+    
+    // Used by: appgateway.json for placement
     "appGatewaySubnetId": {
       "type": "string",
       "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'appgateway-subnet')]"

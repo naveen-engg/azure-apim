@@ -1,52 +1,108 @@
 {
+  /*
+   * ============================================================================
+   * STAGING ENVIRONMENT PARAMETERS
+   * ============================================================================
+   * 
+   * Purpose: Pre-production testing, UAT, performance validation
+   * Cost: ~$342/month
+   * 
+   * Characteristics:
+   *   - Developer SKU APIM (matches dev for cost)
+   *   - WAF Prevention mode (blocks threats like production)
+   *   - 60-day log retention
+   *   - Higher autoscale max (7 instances)
+   * 
+   * Network: 10.5.0.0/16
+   *   - APIM: 10.5.1.0/24
+   *   - App Gateway: 10.5.2.0/24
+   * 
+   * BEFORE DEPLOYING:
+   *   1. Update projectName
+   *   2. Update adminObjectId
+   *   3. Update auth0Domain (use staging Auth0 tenant)
+   *   4. Update auth0Audience (staging API identifier)
+   *   5. Update backendServiceUrl (staging backend)
+   * ============================================================================
+   */
+
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
+  
   "parameters": {
     "projectName": {
+      // UPDATE THIS: Same as dev environment
       "value": "myproject"
     },
+    
     "environment": {
+      // DO NOT CHANGE: Must be "staging"
       "value": "staging"
     },
+    
     "location": {
       "value": "eastus"
     },
+    
+    // Network: 10.5.0.0/16 (different from dev and prod)
     "vnetAddressPrefix": {
       "value": "10.5.0.0/16"
     },
+    
     "apimSubnetPrefix": {
       "value": "10.5.1.0/24"
     },
+    
     "appGatewaySubnetPrefix": {
       "value": "10.5.2.0/24"
     },
+    
+    // Still Developer SKU to save costs
+    // Use Premium in prod for SLA
     "apimSku": {
       "value": "Developer"
     },
+    
     "apimCapacity": {
       "value": 1
     },
+    
+    // Same as dev for base capacity
     "appGatewayCapacity": {
       "value": 2
     },
+    
+    // Higher max for load testing
     "appGatewayMaxCapacity": {
       "value": 7
     },
+    
+    // UPDATE THIS: Staging Auth0 tenant
     "auth0Domain": {
       "value": "contoso-staging.auth0.com"
     },
+    
+    // UPDATE THIS: Staging API identifier
     "auth0Audience": {
       "value": "https://api-staging.contoso.com"
     },
-    "mulesoftBackendUrl": {
-      "value": "https://api-staging.mulesoft.contoso.com"
+    
+    // UPDATE THIS: Staging backend URL
+    "backendServiceUrl": {
+      "value": "https://api-staging.backend.contoso.com"
     },
+    
+    // UPDATE THIS: Your Azure AD Object ID
     "adminObjectId": {
       "value": "YOUR-AZURE-AD-OBJECT-ID"
     },
+    
+    // 60 days retention for staging
     "logRetentionDays": {
       "value": 60
     },
+    
+    // Prevention mode - test with production-like WAF behavior
     "enableWafPreventionMode": {
       "value": true
     }

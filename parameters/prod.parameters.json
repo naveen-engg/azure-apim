@@ -1,52 +1,111 @@
 {
+  /*
+   * ============================================================================
+   * PRODUCTION ENVIRONMENT PARAMETERS
+   * ============================================================================
+   * 
+   * Purpose: Live customer traffic, mission-critical workloads
+   * Cost: ~$6,716-8,016/month
+   * 
+   * Characteristics:
+   *   - Premium SKU APIM (99.95% SLA, multi-region capable)
+   *   - 2 APIM units for high availability
+   *   - WAF Prevention mode (blocks threats)
+   *   - 90-day log retention (compliance)
+   *   - Higher autoscale (3-10 instances)
+   * 
+   * Network: 10.10.0.0/16
+   *   - APIM: 10.10.1.0/24
+   *   - App Gateway: 10.10.2.0/24
+   * 
+   * BEFORE DEPLOYING:
+   *   1. Update projectName
+   *   2. Update adminObjectId
+   *   3. Update auth0Domain (production Auth0 tenant)
+   *   4. Update auth0Audience (production API)
+   *   5. Update backendServiceUrl (production backend)
+   *   6. REVIEW all settings carefully!
+   * ============================================================================
+   */
+
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
+  
   "parameters": {
     "projectName": {
+      // UPDATE THIS: Same across all environments
       "value": "myproject"
     },
+    
     "environment": {
+      // DO NOT CHANGE: Must be "prod"
       "value": "prod"
     },
+    
     "location": {
       "value": "eastus"
     },
+    
+    // Network: 10.10.0.0/16 (different from dev and staging)
     "vnetAddressPrefix": {
       "value": "10.10.0.0/16"
     },
+    
     "apimSubnetPrefix": {
       "value": "10.10.1.0/24"
     },
+    
     "appGatewaySubnetPrefix": {
       "value": "10.10.2.0/24"
     },
+    
+    // Premium SKU: 99.95% SLA, multi-region
+    // Cost: ~$2,975/month per unit
     "apimSku": {
       "value": "Premium"
     },
+    
+    // 2 units for high availability
     "apimCapacity": {
       "value": 2
     },
+    
+    // 3 instances minimum for production
     "appGatewayCapacity": {
       "value": 3
     },
+    
+    // 10 instances max for high load
     "appGatewayMaxCapacity": {
       "value": 10
     },
+    
+    // UPDATE THIS: Production Auth0 tenant
     "auth0Domain": {
       "value": "contoso.auth0.com"
     },
+    
+    // UPDATE THIS: Production API identifier
     "auth0Audience": {
       "value": "https://api.contoso.com"
     },
-    "mulesoftBackendUrl": {
-      "value": "https://api.mulesoft.contoso.com"
+    
+    // UPDATE THIS: Production backend URL
+    "backendServiceUrl": {
+      "value": "https://api.backend.contoso.com"
     },
+    
+    // UPDATE THIS: Your Azure AD Object ID
     "adminObjectId": {
       "value": "YOUR-AZURE-AD-OBJECT-ID"
     },
+    
+    // 90 days for compliance
     "logRetentionDays": {
       "value": 90
     },
+    
+    // MUST be Prevention mode in production
     "enableWafPreventionMode": {
       "value": true
     }

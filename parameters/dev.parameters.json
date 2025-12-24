@@ -1,53 +1,209 @@
 {
+  /*
+   * ============================================================================
+   * DEVELOPMENT ENVIRONMENT PARAMETERS
+   * ============================================================================
+   * 
+   * Purpose: Development and testing configuration
+   * Cost: ~$340/month
+   * 
+   * Characteristics:
+   *   - Developer SKU APIM (no SLA, single region)
+   *   - WAF Detection mode (logs only, doesn't block)
+   *   - 30-day log retention
+   *   - Minimal capacity for cost savings
+   * 
+   * Network: 10.0.0.0/16
+   *   - APIM: 10.0.1.0/24
+   *   - App Gateway: 10.0.2.0/24
+   * 
+   * BEFORE DEPLOYING:
+   *   1. Update projectName (your project identifier)
+   *   2. Update adminObjectId (run: az ad signed-in-user show --query id -o tsv)
+   *   3. Update auth0Domain (your Auth0 tenant)
+   *   4. Update auth0Audience (your Auth0 API identifier)
+   *   5. Update backendServiceUrl (your backend API URL)
+   * ============================================================================
+   */
+
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
+  
   "parameters": {
+    /*
+     * ========================================================================
+     * BASIC CONFIGURATION
+     * ========================================================================
+     */
+    
     "projectName": {
+      // UPDATE THIS: Your project name (lowercase, alphanumeric, max 10 chars)
+      // Used as prefix: {projectName}-{environment}-{resource}
+      // Example: "contoso" → contoso-dev-apim, contoso-dev-vnet
       "value": "myproject"
     },
+    
     "environment": {
+      // DO NOT CHANGE: Must be "dev" for this file
       "value": "dev"
     },
+    
     "location": {
+      // Azure region for all resources
+      // Options: eastus, westus, westeurope, etc.
       "value": "eastus"
     },
+    
+    /*
+     * ========================================================================
+     * NETWORK CONFIGURATION - Development Environment
+     * VNet: 10.0.0.0/16 (65,536 IP addresses)
+     * ========================================================================
+     */
+    
     "vnetAddressPrefix": {
+      // Development VNet range
+      // DO NOT OVERLAP with staging (10.5.0.0/16) or prod (10.10.0.0/16)
       "value": "10.0.0.0/16"
     },
+    
     "apimSubnetPrefix": {
+      // APIM subnet - must be within VNet range
+      // Provides: 256 IP addresses (10.0.1.0 - 10.0.1.255)
       "value": "10.0.1.0/24"
     },
+    
     "appGatewaySubnetPrefix": {
+      // App Gateway subnet - must be within VNet range
+      // Provides: 256 IP addresses (10.0.2.0 - 10.0.2.255)
       "value": "10.0.2.0/24"
     },
+    
+    /*
+     * ========================================================================
+     * API MANAGEMENT CONFIGURATION
+     * Developer SKU: ~$50/month, no SLA, single region only
+     * ========================================================================
+     */
+    
     "apimSku": {
+      // Developer = Dev/test only, no SLA, ~$50/month
+      // DO NOT use Developer in production!
       "value": "Developer"
     },
+    
     "apimCapacity": {
+      // Number of APIM units
+      // Developer SKU: Always 1 unit (cannot scale)
       "value": 1
     },
+    
+    /*
+     * ========================================================================
+     * APPLICATION GATEWAY CONFIGURATION
+     * Autoscaling: 2-5 instances
+     * ========================================================================
+     */
+    
     "appGatewayCapacity": {
+      // Minimum instances always running
+      // Dev: 2 instances for basic availability
       "value": 2
     },
+    
     "appGatewayMaxCapacity": {
+      // Maximum instances during high load
+      // Dev: 5 instances max (cost control)
       "value": 5
     },
+    
+    /*
+     * ========================================================================
+     * AUTH0 CONFIGURATION - UPDATE THESE!
+     * 
+     * Get these values from: https://manage.auth0.com/
+     * 1. Applications → Your App → Domain
+     * 2. APIs → Your API → Identifier
+     * 
+     * IMPORTANT: Use your DEV Auth0 tenant, not production!
+     * ========================================================================
+     */
+    
     "auth0Domain": {
+      // UPDATE THIS: Your Auth0 development tenant domain
+      // Example: "contoso-dev.auth0.com" or "dev-contoso.us.auth0.com"
+      // Find it: Auth0 Dashboard → Applications → Your Dev App → Domain
       "value": "contoso-dev.auth0.com"
     },
+    
     "auth0Audience": {
+      // UPDATE THIS: Your Auth0 API identifier for development
+      // Example: "https://api-dev.contoso.com"
+      // Find it: Auth0 Dashboard → APIs → Your Dev API → Identifier
       "value": "https://api-dev.contoso.com"
     },
-    "mulesoftBackendUrl": {
-      "value": "https://api-dev.mulesoft.contoso.com"
+    
+    /*
+     * ========================================================================
+     * BACKEND SERVICE CONFIGURATION
+     * 
+     * This is YOUR backend API URL that APIM routes to
+     * NOT MuleSoft (MuleSoft is an external client, not a backend)
+     * ========================================================================
+     */
+    
+    "backendServiceUrl": {
+      // UPDATE THIS: Your development backend API URL
+      // Example: "https://api-dev.backend.contoso.com"
+      // This is where APIM forwards requests after validation
+      // Leave empty if you'll configure backends later in APIM portal
+      "value": "https://api-dev.backend.contoso.com"
     },
+    
+    /*
+     * ========================================================================
+     * AZURE AD CONFIGURATION - UPDATE THIS!
+     * 
+     * This grants YOU admin access to Key Vault
+     * 
+     * How to get your Object ID:
+     *   Azure CLI:  az ad signed-in-user show --query id -o tsv
+     *   PowerShell: (Get-AzADUser -UserPrincipalName (Get-AzContext).Account).Id
+     * 
+     * IMPORTANT: This is a GUID, not your email or username!
+     * ========================================================================
+     */
+    
     "adminObjectId": {
+      // UPDATE THIS: Your Azure AD Object ID
+      // Format: 12345678-1234-1234-1234-123456789012
+      // This is NOT your email, username, or subscription ID
       "value": "YOUR-AZURE-AD-OBJECT-ID"
     },
+    
+    /*
+     * ========================================================================
+     * MONITORING CONFIGURATION
+     * ========================================================================
+     */
+    
     "logRetentionDays": {
+      // How long to keep logs
+      // Dev: 30 days (shorter retention for cost savings)
       "value": 30
     },
+    
+    /*
+     * ========================================================================
+     * WAF CONFIGURATION
+     * ========================================================================
+     */
+    
     "enableWafPreventionMode": {
+      // false = Detection mode (logs threats but doesn't block)
+      // true = Prevention mode (blocks threats)
+      // 
+      // Dev: Use Detection mode to avoid blocking legitimate test traffic
       "value": false
     }
   }

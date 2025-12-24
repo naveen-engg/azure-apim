@@ -1,116 +1,155 @@
 {
+  /*
+   * ============================================================================
+   * KEY VAULT TEMPLATE - Secure Storage for Secrets & Certificates
+   * ============================================================================
+   * Purpose: Creates secure storage for SSL certificates and API secrets
+   * 
+   * Dependencies: monitoring.json (needs workspace ID for diagnostics)
+   * 
+   * Resources Created:
+   *   1. Key Vault - Secure storage with soft delete and purge protection
+   *   2. Access Policy - Admin access for uploading secrets/certificates
+   *   3. Diagnostic Settings - Audit logs sent to Log Analytics
+   * 
+   * What to Store (Post-Deployment):
+   *   - SSL/TLS certificates for App Gateway
+   *   - Backend API credentials
+   *   - Database connection strings
+   *   - Third-party API keys
+   * 
+   * Returns:
+   *   - keyVaultName → Used for manual secret upload after deployment
+   * ============================================================================
+   */
+
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  
   "parameters": {
     "location": {
-      "type": "string",
-      "metadata": {
-        "description": "Azure region"
-      }
+      "type": "string"
     },
+    
     "keyVaultName": {
-      "type": "string",
-      "metadata": {
-        "description": "Key Vault name"
-      }
+      // Generated as: {projectName}{environment}kv (no dashes - KV naming rules)
+      // Example: myprojectdevkv (max 24 characters)
+      "type": "string"
     },
+    
     "adminObjectId": {
-      "type": "string",
-      "metadata": {
-        "description": "Azure AD Object ID for admin access"
-      }
+      // YOUR Azure AD Object ID - MUST UPDATE THIS
+      // Get it: az ad signed-in-user show --query id -o tsv
+      // This grants YOU admin access to upload secrets and certificates
+      "type": "string"
     },
+    
     "logAnalyticsWorkspaceId": {
-      "type": "string",
-      "metadata": {
-        "description": "Log Analytics Workspace resource ID"
-      }
+      // Passed from monitoring.json output
+      // Used for audit logging
+      "type": "string"
     }
   },
-  "variables": {
-    "tenantId": "[subscription().tenantId]"
-  },
+  
   "resources": [
+    /*
+     * KEY VAULT
+     * Secure storage for secrets, keys, and certificates
+     */
     {
       "type": "Microsoft.KeyVault/vaults",
       "apiVersion": "2023-02-01",
       "name": "[parameters('keyVaultName')]",
       "location": "[parameters('location')]",
       "properties": {
+        "tenantId": "[subscription().tenantId]",
         "sku": {
           "family": "A",
-          "name": "standard"
+          "name": "standard"  // Standard SKU (not Premium - no HSM)
         },
-        "tenantId": "[variables('tenantId')]",
-        "enabledForDeployment": false,
-        "enabledForDiskEncryption": false,
-        "enabledForTemplateDeployment": true,
-        "enableSoftDelete": true,
-        "softDeleteRetentionInDays": 90,
-        "enableRbacAuthorization": false,
-        "enablePurgeProtection": true,
-        "publicNetworkAccess": "Enabled",
-        "networkAcls": {
-          "bypass": "AzureServices",
-          "defaultAction": "Deny",
-          "ipRules": [],
-          "virtualNetworkRules": []
-        },
+        
+        /*
+         * ACCESS POLICIES
+         * Who can access secrets, keys, and certificates
+         */
         "accessPolicies": [
           {
-            "tenantId": "[variables('tenantId')]",
-            "objectId": "[parameters('adminObjectId')]",
+            // Admin policy - YOU can manage everything
+            "tenantId": "[subscription().tenantId]",
+            "objectId": "[parameters('adminObjectId')]",  // YOUR Azure AD Object ID
             "permissions": {
               "keys": [
-                "Get",
-                "List",
-                "Update",
-                "Create",
-                "Import",
-                "Delete",
-                "Recover",
-                "Backup",
-                "Restore",
-                "GetRotationPolicy",
-                "SetRotationPolicy",
-                "Rotate"
+                "get",
+                "list",
+                "create",
+                "delete",
+                "update",
+                "import"
               ],
               "secrets": [
-                "Get",
-                "List",
-                "Set",
-                "Delete",
-                "Recover",
-                "Backup",
-                "Restore"
+                "get",
+                "list",
+                "set",
+                "delete"
               ],
               "certificates": [
-                "Get",
-                "List",
-                "Update",
-                "Create",
-                "Import",
-                "Delete",
-                "Recover",
-                "Backup",
-                "Restore",
-                "ManageContacts",
-                "ManageIssuers",
-                "GetIssuers",
-                "ListIssuers",
-                "SetIssuers",
-                "DeleteIssuers"
+                "get",
+                "list",
+                "create",
+                "delete",
+                "import",
+                "update"
               ]
             }
           }
-        ]
+          /*
+           * NOTE: APIM Managed Identity access is granted POST-DEPLOYMENT
+           * After APIM is created, run:
+           *   az keyvault set-policy --name {keyVaultName} \
+           *     --object-id {apimPrincipalId} \
+           *     --secret-permissions get list
+           */
+        ],
+        
+        // Soft delete enabled - deleted items retained for 90 days
+        // Protects against accidental deletion
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 90,
+        
+        // Purge protection - can't permanently delete during retention period
+        // Extra safety for production environments
+        "enablePurgeProtection": true,
+        
+        // Enable for ARM template deployments
+        // Allows templates to read secrets during deployment
+        "enabledForTemplateDeployment": true,
+        
+        // Disable for VM deployment (not using VMs)
+        "enabledForDeployment": false,
+        
+        // Disable for disk encryption (not using disk encryption)
+        "enabledForDiskEncryption": false,
+        
+        // Use access policies (not RBAC)
+        // Access policies are simpler for this use case
+        "enableRbacAuthorization": false,
+        
+        // Network access rules
+        "networkAcls": {
+          "bypass": "AzureServices",  // Allow Azure services to access
+          "defaultAction": "Allow"     // Allow public access (restrict if needed)
+        }
       }
     },
+    
+    /*
+     * DIAGNOSTIC SETTINGS
+     * Send audit logs to Log Analytics for compliance
+     */
     {
-      "type": "Microsoft.Insights/diagnosticSettings",
+      "type": "Microsoft.KeyVault/vaults/providers/diagnosticSettings",
       "apiVersion": "2021-05-01-preview",
-      "name": "keyvault-diagnostics",
-      "scope": "[concat('Microsoft.KeyVault/vaults/', parameters('keyVaultName'))]",
+      "name": "[concat(parameters('keyVaultName'), '/Microsoft.Insights/keyvault-diagnostics')]",
       "dependsOn": [
         "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
       ],
@@ -118,25 +157,17 @@
         "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
         "logs": [
           {
-            "category": "AuditEvent",
+            "category": "AuditEvent",  // Who accessed what secrets/certificates
             "enabled": true,
             "retentionPolicy": {
-              "enabled": false,
-              "days": 0
-            }
-          },
-          {
-            "category": "AzurePolicyEvaluationDetails",
-            "enabled": true,
-            "retentionPolicy": {
-              "enabled": false,
+              "enabled": false,  // Use workspace retention instead
               "days": 0
             }
           }
         ],
         "metrics": [
           {
-            "category": "AllMetrics",
+            "category": "AllMetrics",  // Availability, latency metrics
             "enabled": true,
             "retentionPolicy": {
               "enabled": false,
@@ -147,15 +178,15 @@
       }
     }
   ],
+  
   "outputs": {
-    "keyVaultId": {
-      "type": "string",
-      "value": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
-    },
+    // Key Vault name - use this to upload secrets
     "keyVaultName": {
       "type": "string",
       "value": "[parameters('keyVaultName')]"
     },
+    
+    // Key Vault URI - used in APIM policies
     "keyVaultUri": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))).vaultUri]"
